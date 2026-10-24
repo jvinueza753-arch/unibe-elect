@@ -1,0 +1,20 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [identidad, elecciones, votacion, resultados]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+        working-directory: services/${{ matrix.service }}
+      - run: npx prisma generate
+        working-directory: services/${{ matrix.service }}
+        env: { DATABASE_URL: postgresql://x:x@localhost:5432/x }
+      - run: npm test --if-present -- --passWithNoTests
+        working-directory: services/${{ matrix.service }}

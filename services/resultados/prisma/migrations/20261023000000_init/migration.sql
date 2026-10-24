@@ -1,0 +1,7 @@
+CREATE TYPE "EstadoEscrutinio" AS ENUM ('GENERADO','PUBLICADO');
+CREATE TABLE "escrutinios" ("id" UUID NOT NULL,"eleccionId" UUID NOT NULL,"titulo" TEXT NOT NULL,"estado" "EstadoEscrutinio" NOT NULL DEFAULT 'GENERADO',"totalVotos" INTEGER NOT NULL,"votosEnBlanco" INTEGER NOT NULL,"totalHabilitados" INTEGER NOT NULL,"participacion" DECIMAL(5,2) NOT NULL,"empate" BOOLEAN NOT NULL DEFAULT false,"generadoEn" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"publicadoEn" TIMESTAMP(3),CONSTRAINT "escrutinios_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "escrutinios_candidaturas" ("id" UUID NOT NULL,"escrutinioId" UUID NOT NULL,"candidaturaId" UUID NOT NULL,"nombre" TEXT NOT NULL,"votos" INTEGER NOT NULL,"porcentaje" DECIMAL(5,2) NOT NULL,"ganadora" BOOLEAN NOT NULL DEFAULT false,CONSTRAINT "escrutinios_candidaturas_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "escrutinios_grupos" ("id" UUID NOT NULL,"escrutinioId" UUID NOT NULL,"facultad" TEXT NOT NULL,"carrera" TEXT NOT NULL,"votaron" INTEGER NOT NULL,"habilitados" INTEGER NOT NULL,CONSTRAINT "escrutinios_grupos_pkey" PRIMARY KEY ("id"));
+CREATE UNIQUE INDEX "escrutinios_eleccionId_key" ON "escrutinios"("eleccionId");
+ALTER TABLE "escrutinios_candidaturas" ADD CONSTRAINT "escrutinios_candidaturas_escrutinioId_fkey" FOREIGN KEY ("escrutinioId") REFERENCES "escrutinios"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "escrutinios_grupos" ADD CONSTRAINT "escrutinios_grupos_escrutinioId_fkey" FOREIGN KEY ("escrutinioId") REFERENCES "escrutinios"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -1,0 +1,28 @@
+{
+  "name": "unibe-votacion",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.js",
+  "scripts": {
+    "predev": "prisma generate && tsc --target ES2022 --module commonjs --moduleResolution node --esModuleInterop --skipLibCheck --rewriteRelativeImportExtensions --outDir generated-js generated/prisma/*.ts && prisma migrate deploy",
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "test": "jest --runInBand"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.0.0",
+    "@prisma/adapter-pg": "^7.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "prisma": "^7.0.0",
+    "typescript": "^5.8.3",
+    "@types/node": "^22.14.0"
+  }
+}

@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client"
+  output = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum Rol {
+  ESTUDIANTE
+  ADMINISTRADOR
+}
+enum Estado {
+  ACTIVO
+  INACTIVO
+}
+enum EstadoSolicitudRecuperacion {
+  PENDIENTE
+  APROBADA
+  RECHAZADA
+  COMPLETADA
+  EXPIRADA
+}
+model Usuario {
+  id String @id @default(uuid()) @db.Uuid
+  nombres String
+  apellidos String
+  correo String @unique
+  contrasenaHash String
+  codigoEstudiantil String @unique
+  facultad String
+  carrera String
+  rol Rol @default(ESTUDIANTE)
+  estado Estado @default(ACTIVO)
+  creadoEn DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+  solicitudesRecuperacion SolicitudRecuperacion[]
+  @@index([facultad, carrera])
+  @@map("usuarios")
+}
+model SolicitudRecuperacion {
+  id String @id @default(uuid()) @db.Uuid
+  usuarioId String @db.Uuid
+  estado EstadoSolicitudRecuperacion @default(PENDIENTE)
+  codigoHash String? @unique
+  codigoExpira DateTime?
+  solicitadaEn DateTime @default(now())
+  resueltaEn DateTime?
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  @@index([estado, solicitadaEn])
+  @@map("solicitudes_recuperacion")
+}

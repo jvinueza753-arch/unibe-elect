@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client"
+  output = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+datasource db {
+  provider = "postgresql"
+}
+model Participacion {
+ id String @id @default(uuid()) @db.Uuid
+ eleccionId String @db.Uuid
+ usuarioId String @db.Uuid
+ facultad String
+ carrera String
+ comprobante String @unique
+ fecha DateTime @default(now())
+ @@unique([eleccionId, usuarioId])
+ @@index([eleccionId, facultad, carrera])
+ @@map("participaciones")
+}
+model Voto {
+ id String @id @default(uuid()) @db.Uuid
+ eleccionId String @db.Uuid
+ candidaturaId String? @db.Uuid
+ dia DateTime @db.Date
+ @@index([eleccionId])
+ @@map("votos")
+}

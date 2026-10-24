@@ -1,0 +1,14 @@
+openapi: 3.0.3
+info:
+  title: UNIBE Elect - resultados
+  version: 1.0.0
+  description: API del microservicio resultados.
+servers:
+  - url: http://localhost:4004
+paths:
+  /health:
+    get:
+      summary: Comprobar salud del servicio y base de datos
+      responses:
+        '200': { description: Servicio disponible }
+        '503': { description: Base de datos no disponible }

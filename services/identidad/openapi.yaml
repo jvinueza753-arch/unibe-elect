@@ -1,0 +1,86 @@
+openapi: 3.0.3
+info:
+  title: UNIBE Elect - identidad
+  version: 1.0.0
+  description: API del microservicio identidad.
+servers:
+  - url: http://localhost:4001
+paths:
+  /health:
+    get:
+      summary: Comprobar salud del servicio y base de datos
+      responses:
+        '200': { description: Servicio disponible }
+        '503': { description: Base de datos no disponible }
+  /api/v1/auth/solicitudes-recuperacion:
+    post:
+      summary: Solicitar recuperación de contraseña
+      description: Siempre responde con un mensaje genérico para no revelar si existe la cuenta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [correo]
+              properties:
+                correo: { type: string, format: email }
+      responses:
+        '202': { description: Solicitud recibida o no aplicable }
+        '400': { description: Correo inválido }
+        '429': { description: Límite de solicitudes alcanzado }
+  /api/v1/auth/restablecer-contrasena:
+    post:
+      summary: Establecer contraseña con código aprobado
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [codigo, contrasenaNueva]
+              properties:
+                codigo: { type: string, minLength: 32 }
+                contrasenaNueva: { type: string, minLength: 8, maxLength: 128 }
+      responses:
+        '204': { description: Contraseña actualizada; código consumido }
+        '400': { description: Datos o código inválidos }
+  /api/v1/admin/solicitudes-recuperacion:
+    get:
+      summary: Listar solicitudes de recuperación
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Solicitudes recientes con datos básicos del estudiante }
+        '403': { description: Se requiere rol administrador }
+  /api/v1/admin/solicitudes-recuperacion/{id}/aprobar:
+    post:
+      summary: Aprobar solicitud y generar código de un solo uso
+      description: El código solo se devuelve en esta respuesta y vence en una hora.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Solicitud aprobada; entregar el código al estudiante por un canal seguro }
+        '404': { description: Solicitud no pendiente }
+        '409': { description: El estudiante ya tiene una recuperación activa }
+  /api/v1/admin/solicitudes-recuperacion/{id}/rechazar:
+    post:
+      summary: Rechazar solicitud pendiente
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204': { description: Solicitud rechazada }
+        '404': { description: Solicitud no pendiente }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

@@ -1,0 +1,29 @@
+openapi: 3.0.3
+info:
+  title: UNIBE Elect - votacion
+  version: 1.0.0
+  description: API del microservicio votacion.
+servers:
+  - url: http://localhost:4003
+paths:
+  /health:
+    get:
+      summary: Comprobar salud del servicio y base de datos
+      responses:
+        '200': { description: Servicio disponible }
+        '503': { description: Base de datos no disponible }
+  /internal/votacion/elecciones/{id}/total-participacion:
+    get:
+      summary: Consultar el total agregado de participaciones de una elección
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: X-Internal-Key
+          in: header
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: Total de participaciones, sin identidades ni contenido de votos }
+        '401': { description: Clave interna inválida }

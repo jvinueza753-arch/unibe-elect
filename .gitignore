@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Local environment files and secrets
+.env
+.env.*
+!.env.example
+keys/**
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Generated and local data
+**/generated/
+coverage/
+**/coverage/
+dist/
+**/dist/
+build/
+**/build/
+.next/
+.vite/
+*.log
+*.sqlite
+*.sqlite3
+*.db
+
+# Local tooling and operating-system files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/*
+!.vscode/extensions.json

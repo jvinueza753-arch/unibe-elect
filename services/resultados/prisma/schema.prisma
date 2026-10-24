@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client"
+  output = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum EstadoEscrutinio {
+  GENERADO
+  PUBLICADO
+}
+model Escrutinio {
+ id String @id @default(uuid()) @db.Uuid
+ eleccionId String @unique @db.Uuid
+ titulo String
+ estado EstadoEscrutinio @default(GENERADO)
+ totalVotos Int
+ votosEnBlanco Int
+ totalHabilitados Int
+ participacion Decimal @db.Decimal(5,2)
+ empate Boolean @default(false)
+ generadoEn DateTime @default(now())
+ publicadoEn DateTime?
+ candidaturas EscrutinioCandidatura[]
+ grupos EscrutinioGrupo[]
+ @@map("escrutinios")
+}
+model EscrutinioCandidatura {
+ id String @id @default(uuid()) @db.Uuid
+ escrutinioId String @db.Uuid
+ candidaturaId String @db.Uuid
+ nombre String
+ votos Int
+ porcentaje Decimal @db.Decimal(5,2)
+ ganadora Boolean @default(false)
+ escrutinio Escrutinio @relation(fields: [escrutinioId], references: [id], onDelete: Cascade)
+ @@map("escrutinios_candidaturas")
+}
+model EscrutinioGrupo {
+ id String @id @default(uuid()) @db.Uuid
+ escrutinioId String @db.Uuid
+ facultad String
+ carrera String
+ votaron Int
+ habilitados Int
+ escrutinio Escrutinio @relation(fields: [escrutinioId], references: [id], onDelete: Cascade)
+ @@map("escrutinios_grupos")
+}

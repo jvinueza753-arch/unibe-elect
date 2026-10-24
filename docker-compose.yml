@@ -1,0 +1,172 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_dev_only
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  claves:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./scripts/generar-claves.js:/app/generar-claves.js:ro
+      - jwt_private:/keys/private
+      - jwt_public:/keys/public
+    environment:
+      JWT_PRIVATE_KEY_PATH: /keys/private/private.pem
+      JWT_PUBLIC_KEY_PATH: /keys/public/public.pem
+    command: ["node", "generar-claves.js"]
+  identidad:
+    build:
+      context: .
+      dockerfile: services/identidad/Dockerfile
+    environment: &common
+      NODE_ENV: development
+      CLAVE_INTERNA: dev-internal-key-change-me
+      JWT_PRIVATE_KEY_PATH: /run/jwt/private/private.pem
+      JWT_PUBLIC_KEY_PATH: /run/jwt/public/public.pem
+      DATABASE_URL: postgresql://identidad:identidad_dev@postgres:5432/unibe_identidad?schema=public
+      DOMINIO_CORREO_INSTITUCIONAL: ""
+      PORT: 4001
+    volumes:
+      - jwt_private:/run/jwt/private:ro
+      - jwt_public:/run/jwt/public:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      claves:
+        condition: service_completed_successfully
+    ports: ["4001:4001"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4001/health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+  elecciones:
+    build:
+      context: .
+      dockerfile: services/elecciones/Dockerfile
+    environment:
+      <<: *common
+      PORT: 4002
+      DATABASE_URL: postgresql://elecciones:elecciones_dev@postgres:5432/unibe_elecciones?schema=public
+      IDENTIDAD_URL: http://identidad:4001
+      VOTACION_URL: http://votacion:4003
+    volumes:
+      - jwt_public:/run/jwt/public:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      claves:
+        condition: service_completed_successfully
+      identidad:
+        condition: service_healthy
+    ports: ["4002:4002"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4002/health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+  votacion:
+    build:
+      context: .
+      dockerfile: services/votacion/Dockerfile
+    environment:
+      <<: *common
+      PORT: 4003
+      DATABASE_URL: postgresql://votacion:votacion_dev@postgres:5432/unibe_votacion?schema=public
+      ELECCIONES_URL: http://elecciones:4002
+    volumes:
+      - jwt_public:/run/jwt/public:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      claves:
+        condition: service_completed_successfully
+      elecciones:
+        condition: service_healthy
+    ports: ["4003:4003"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4003/health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+  resultados:
+    build:
+      context: .
+      dockerfile: services/resultados/Dockerfile
+    environment:
+      <<: *common
+      PORT: 4004
+      DATABASE_URL: postgresql://resultados:resultados_dev@postgres:5432/unibe_resultados?schema=public
+      ELECCIONES_URL: http://elecciones:4002
+      VOTACION_URL: http://votacion:4003
+      IDENTIDAD_URL: http://identidad:4001
+    volumes:
+      - jwt_public:/run/jwt/public:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      claves:
+        condition: service_completed_successfully
+      elecciones:
+        condition: service_healthy
+      votacion:
+        condition: service_healthy
+    ports: ["4004:4004"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4004/health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway/Dockerfile
+    environment:
+      PORT: 3000
+      IDENTIDAD_URL: http://identidad:4001
+      ELECCIONES_URL: http://elecciones:4002
+      VOTACION_URL: http://votacion:4003
+      RESULTADOS_URL: http://resultados:4004
+      LIMITE_GENERAL: 100000
+      LIMITE_LOGIN: 100000
+      LIMITE_RECUPERACION: 100000
+      LIMITE_VOTACION: 100000
+    depends_on:
+      identidad:
+        condition: service_healthy
+      elecciones:
+        condition: service_healthy
+      votacion:
+        condition: service_healthy
+      resultados:
+        condition: service_healthy
+    ports: ["3000:3000"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/health | grep -q ok"]
+      interval: 10s
+      timeout: 3s
+      retries: 20
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports: ["5173:5173"]
+volumes:
+  postgres_data:
+  jwt_private:
+  jwt_public:

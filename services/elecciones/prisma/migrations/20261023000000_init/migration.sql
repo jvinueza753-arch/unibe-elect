@@ -1,0 +1,5 @@
+CREATE TYPE "EstadoGuardado" AS ENUM ('BORRADOR','PUBLICADA','CANCELADA');
+CREATE TABLE "elecciones" ("id" UUID NOT NULL,"titulo" TEXT NOT NULL,"descripcion" TEXT,"fechaApertura" TIMESTAMP(3) NOT NULL,"fechaCierre" TIMESTAMP(3) NOT NULL,"facultadesPermitidas" TEXT[] DEFAULT ARRAY[]::TEXT[],"carrerasPermitidas" TEXT[] DEFAULT ARRAY[]::TEXT[],"estadoGuardado" "EstadoGuardado" NOT NULL DEFAULT 'BORRADOR',"creadaPor" UUID NOT NULL,"creadoEn" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,"actualizadoEn" TIMESTAMP(3) NOT NULL,CONSTRAINT "elecciones_pkey" PRIMARY KEY ("id"));
+CREATE TABLE "candidaturas" ("id" UUID NOT NULL,"eleccionId" UUID NOT NULL,"nombre" TEXT NOT NULL,"descripcion" TEXT,"fotoUrl" TEXT,"orden" INTEGER NOT NULL DEFAULT 0,CONSTRAINT "candidaturas_pkey" PRIMARY KEY ("id"));
+CREATE INDEX "candidaturas_eleccionId_orden_idx" ON "candidaturas"("eleccionId","orden");
+ALTER TABLE "candidaturas" ADD CONSTRAINT "candidaturas_eleccionId_fkey" FOREIGN KEY ("eleccionId") REFERENCES "elecciones"("id") ON DELETE CASCADE ON UPDATE CASCADE;

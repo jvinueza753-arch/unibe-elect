@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client"
+  output = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+datasource db {
+  provider = "postgresql"
+}
+enum EstadoGuardado {
+  BORRADOR
+  PUBLICADA
+  CANCELADA
+}
+model Eleccion {
+ id String @id @default(uuid()) @db.Uuid
+ titulo String
+ descripcion String?
+ fechaApertura DateTime
+ fechaCierre DateTime
+ candidaturasRequeridas Int @default(2)
+ facultadesPermitidas String[] @default([])
+ carrerasPermitidas String[] @default([])
+ estadoGuardado EstadoGuardado @default(BORRADOR)
+ creadaPor String @db.Uuid
+ creadoEn DateTime @default(now())
+ actualizadoEn DateTime @updatedAt
+ candidaturas Candidatura[]
+ @@map("elecciones")
+}
+model Candidatura {
+ id String @id @default(uuid()) @db.Uuid
+ eleccionId String @db.Uuid
+ nombre String
+ descripcion String?
+ fotoUrl String?
+ orden Int @default(0)
+ eleccion Eleccion @relation(fields: [eleccionId], references: [id], onDelete: Cascade)
+ @@index([eleccionId, orden])
+ @@map("candidaturas")
+}

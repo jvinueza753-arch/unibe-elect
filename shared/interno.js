@@ -1,0 +1,2 @@
+async function llamarInterno(url, options = {}) { const response = await fetch(url, { ...options, headers: { 'content-type': 'application/json', 'X-Internal-Key': process.env.CLAVE_INTERNA || 'dev-internal-key-change-me', ...(options.headers || {}) } }); const body = response.status === 204 ? null : await response.json(); if (!response.ok) { const e = new Error(body?.error?.mensaje || `Servicio interno respondió ${response.status}`); e.status = response.status; e.body = body; throw e; } return body?.data; }
+module.exports = { llamarInterno };
