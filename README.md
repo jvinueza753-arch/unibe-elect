@@ -12,14 +12,9 @@ docker compose up --build
 
 El primer arranque crea cuatro bases de datos, genera claves JWT y aplica las migraciones automáticamente. URLs: frontend `http://localhost:5173`, gateway `http://localhost:3000/health`.
 
-Para reiniciar todos los datos: `docker compose down -v` y luego `docker compose up --build`. Si cambian dependencias, reconstruye con `docker compose up --build -V`.
+Para reconstruir imágenes cuando cambien dependencias, ejecuta `docker compose up --build -V`. No elimines volúmenes ni reinicies bases de datos que puedan contener datos activos.
 
-## Credenciales de demostración
-
-- Administrador: `admin@unibe.edu.ec` / `Admin12345!`
-- Estudiantes: `estudiante01@unibe.edu.ec` … `estudiante12@unibe.edu.ec` / `Estudiante123!`
-
-Estas credenciales son solo para desarrollo académico; no usar en producción.
+Las cuentas de demostración no se crean por defecto. Para una instalación de desarrollo aislada, copia `.env.example` a `.env` y configura `ALLOW_DEMO_SEED=true`, `DEMO_ADMIN_PASSWORD` y `DEMO_STUDENT_PASSWORD` (cada contraseña debe tener al menos 16 caracteres). Docker Compose envía esos valores al microservicio de identidad. Nunca habilites la semilla en producción.
 
 ## Servicios
 
@@ -34,11 +29,21 @@ Estas credenciales son solo para desarrollo académico; no usar en producción.
 
 ## Pruebas
 
-Con el sistema levantado, ejecutar `node scripts/e2e.js`. El script usa `fetch` de Node 20 y necesita el backend disponible. No declares una verificación como exitosa sin ejecutarla.
+Las pruebas unitarias se ejecutan por servicio con su comando `npm test`. Para el E2E, levanta una instancia aparte con cuatro bases y volúmenes exclusivos:
+
+```powershell
+docker compose -p unibe-elect-e2e -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+$env:E2E_API_URL = "http://localhost:3100"
+$env:E2E_TEST_DATABASE_PREFIX = "unibe_test"
+$env:E2E_ISOLATION_CONFIRMED = "YES"
+node scripts/e2e.js
+```
+
+El script verifica que el gateway y los cuatro servicios confirmen las bases `unibe_test_*` antes de enviar solicitudes. Los registros E2E permanecen solo en el volumen aislado. Para borrar exclusivamente ese entorno de prueba cuando ya no lo necesites, ejecuta `docker compose -p unibe-elect-e2e -f docker-compose.yml -f docker-compose.e2e.yml down -v`; no uses ese comando con el proyecto normal.
 
 ## Seguridad y alcance
 
-La clave privada JWT solo se monta en Identidad. Los otros servicios reciben la clave pública. Los endpoints `/internal/*` exigen `X-Internal-Key` y el gateway los bloquea. Las tablas `participaciones` y `votos` son independientes; `votos` no tiene campos de usuario ni relación con participación. La restricción única `(eleccionId, usuarioId)` impide doble voto incluso bajo concurrencia.
+La clave privada JWT solo se monta en Identidad. Los otros servicios reciben la clave pública. En producción, define `CLAVE_INTERNA` con un secreto aleatorio de al menos 32 bytes; el arranque de los servicios rechaza claves ausentes o débiles. Los endpoints `/internal/*` exigen `X-Internal-Key` y el gateway los bloquea. Las tablas `participaciones` y `votos` son independientes; `votos` no tiene campos de usuario ni relación con participación. La restricción única `(eleccionId, usuarioId)` impide doble voto incluso bajo concurrencia.
 
 El panel administrativo muestra la participación y las personas pendientes por elección abierta. El panel estudiantil muestra elecciones abiertas o programadas, fechas de cierre, recordatorios de voto y participación agregada; los votos por candidatura se mantienen ocultos hasta publicar el escrutinio. La cantidad mínima de candidaturas es configurable en cada borrador. La administración también puede descargar la plantilla CSV de estudiantes.
 

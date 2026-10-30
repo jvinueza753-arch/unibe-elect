@@ -6,7 +6,7 @@ Las rutas públicas usan el prefijo `/api/v1`; las respuestas exitosas usan `{ "
 - `POST /api/v1/auth/registro`
 - `POST /api/v1/auth/login`
 - `GET /api/v1/auth/me`
-- `POST /api/v1/auth/cambiar-contrasena`
+- `POST /api/v1/auth/cambiar-contrasena` requiere la contraseña actual y devuelve `204` al actualizarla. Un `401 CREDENCIALES_INVALIDAS` indica que la contraseña actual no coincide; la sesión solo debe cerrarse cuando el error sea `401 NO_AUTENTICADO`.
 - `POST /api/v1/auth/solicitudes-recuperacion` crea una solicitud genérica para cuentas estudiantiles activas; la respuesta no revela si existe el correo.
 - `POST /api/v1/auth/restablecer-contrasena` recibe el código aprobado, de un solo uso, y la nueva contraseña.
 - `GET /api/v1/admin/solicitudes-recuperacion` lista solicitudes para administradores.

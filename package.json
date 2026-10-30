@@ -1,1 +1,15 @@
-{"name":"unibe-elect","version":"1.0.0","private":true,"scripts":{"e2e":"node scripts/e2e.js","lint":"eslint .","format":"prettier --write .","format:check":"prettier --check ."},"devDependencies":{"eslint":"^9.25.0","prettier":"^3.5.3"}}
+{
+  "name": "unibe-elect",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "e2e": "node scripts/e2e.js",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "eslint": "^9.25.0",
+    "prettier": "^3.5.3"
+  }
+}

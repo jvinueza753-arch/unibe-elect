@@ -27,7 +27,7 @@ export function ElectionList() {
           setItems(response?.data || []);
           setPages(response?.meta?.totalPaginas || 1);
         } else {
-          const data = await api('/elecciones/estudiante');
+          const data = await api('/elecciones/disponibles');
           if (!active) return;
           setItems((data || []).filter((election) => election.estado !== 'CERRADA'));
         }

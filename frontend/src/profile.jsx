@@ -9,16 +9,17 @@ export function Profile() {
 
   async function submit(event) {
     event.preventDefault();
+    const formElement = event.currentTarget;
     setBusy(true);
     setError('');
     setMessage('');
-    const form = new FormData(event.currentTarget);
+    const form = new FormData(formElement);
     try {
       await api('/auth/cambiar-contrasena', {
         method: 'POST',
         body: JSON.stringify({ contrasenaActual: form.get('actual'), contrasenaNueva: form.get('nueva') }),
       });
-      event.currentTarget.reset();
+      formElement.reset();
       setMessage('Contraseña actualizada.');
     } catch (cause) {
       setError(cause.message);
@@ -29,19 +30,39 @@ export function Profile() {
 
   return (
     <Shell>
-      <section className="narrow"><span className="eyebrow">MI CUENTA</span><h1>Mi perfil</h1>
-        <div className="panel profile">
-          <p><span>Nombre</span><b>{user.nombres} {user.apellidos}</b></p>
-          <p><span>Correo</span><b>{user.correo}</b></p>
-          <p><span>Código estudiantil</span><b>{user.codigoEstudiantil}</b></p>
-          <p><span>Facultad / carrera</span><b>{user.facultad} / {user.carrera}</b></p>
+      <section className="narrow profile-page">
+        <div className="profile-heading">
+          <span className="eyebrow">MI CUENTA</span>
+          <h1>Mi perfil</h1>
+          <p>Consulta tus datos y mantén segura tu cuenta universitaria.</p>
         </div>
-        <form className="panel" onSubmit={submit}>
-          <h2>Cambiar contraseña</h2>
+        <div className="panel profile-card">
+          <div className="profile-card-heading">
+            <span className="profile-avatar" aria-hidden="true">
+              {`${user.nombres?.[0] || ''}${user.apellidos?.[0] || ''}`.toUpperCase()}
+            </span>
+            <div>
+              <h2>{user.nombres} {user.apellidos}</h2>
+              <p>{user.correo}</p>
+            </div>
+            <span className="role-pill">Estudiante</span>
+          </div>
+          <div className="profile-details">
+            <div><span>Código estudiantil</span><b>{user.codigoEstudiantil}</b></div>
+            <div><span>Facultad</span><b>{user.facultad}</b></div>
+            <div><span>Carrera</span><b>{user.carrera}</b></div>
+          </div>
+        </div>
+        <form className="panel password-panel" onSubmit={submit}>
+          <div className="profile-heading">
+            <span className="eyebrow">SEGURIDAD</span>
+            <h2>Cambiar contraseña</h2>
+            <p>Usa una contraseña nueva de al menos 8 caracteres.</p>
+          </div>
           <label>Contraseña actual<input type="password" name="actual" required autoComplete="current-password" /></label>
-          <label>Nueva contraseña<input type="password" name="nueva" minLength="8" required autoComplete="new-password" /></label>
+          <label>Nueva contraseña<input type="password" name="nueva" minLength={8} maxLength={128} required autoComplete="new-password" /></label>
           {error && <p className="error" role="alert">{error}</p>}
-          {message && <p className="success">{message}</p>}
+          {message && <p className="success" role="status" aria-live="polite">{message}</p>}
           <button className="primary" disabled={busy}>{busy ? 'Actualizando…' : 'Actualizar contraseña'}</button>
         </form>
       </section>

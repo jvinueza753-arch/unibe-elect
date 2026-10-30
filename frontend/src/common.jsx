@@ -37,11 +37,6 @@ export function AuthProvider({ children }) {
     if (token) headers.Authorization = `Bearer ${token}`;
 
     const response = await fetch(`${API}${path}`, { ...options, headers });
-    if (response.status === 401 && token) {
-      logout(true);
-      throw new Error('La sesión venció. Inicia sesión de nuevo.');
-    }
-
     let payload = null;
     if (response.status !== 204) {
       if ((response.headers.get('content-type') || '').includes('text/csv')) {
@@ -56,6 +51,11 @@ export function AuthProvider({ children }) {
           }
         }
       }
+    }
+
+    if (response.status === 401 && token && payload?.error?.codigo === 'NO_AUTENTICADO') {
+      logout(true);
+      throw new Error('La sesión venció. Inicia sesión de nuevo.');
     }
 
     if (!response.ok) {
@@ -182,7 +182,7 @@ export function Shell({ children }) {
         )}
       </header>
       <main className="container">{children}</main>
-      <footer>UNIBE Elect · Proyecto académico de votación electrónica</footer>
+      <footer>UNIBE Elect ·2026</footer>
     </>
   );
 }

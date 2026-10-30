@@ -12,9 +12,32 @@ app.use("/internal", (_req, res) =>
       error: { codigo: "NO_ENCONTRADO", mensaje: "Ruta no encontrada" },
     }),
 );
-app.get("/health", (_req, res) =>
-  res.json({ data: { estado: "ok", servicio: "gateway" } }),
-);
+app.get("/health", async (_req, res) => {
+  let e2eAislado = false;
+  if (process.env.NODE_ENV === "test"
+      && process.env.E2E_ISOLATED_DATABASE === "true"
+      && /^unibe_test(?:_[a-z0-9_]+)?$/.test(process.env.E2E_TEST_DATABASE_PREFIX || "")) {
+    const healthChecks = [
+      ["IDENTIDAD_URL", "http://identidad:4001"],
+      ["ELECCIONES_URL", "http://elecciones:4002"],
+      ["VOTACION_URL", "http://votacion:4003"],
+      ["RESULTADOS_URL", "http://resultados:4004"],
+    ];
+    try {
+      const results = await Promise.all(healthChecks.map(async ([env, fallback]) => {
+        const base = (process.env[env] || fallback).replace(/\/$/, "");
+        const response = await fetch(`${base}/health`);
+        if (!response.ok) return false;
+        const payload = await response.json();
+        return payload?.data?.e2eAislado === true;
+      }));
+      e2eAislado = results.every(Boolean);
+    } catch {
+      e2eAislado = false;
+    }
+  }
+  res.json({ data: { estado: "ok", servicio: "gateway", e2eAislado } });
+});
 const limite = (name, fallback) =>
   Math.max(1, Number(process.env[name]) || fallback);
 app.use(

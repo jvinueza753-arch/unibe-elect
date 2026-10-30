@@ -154,7 +154,7 @@ Enums `Rol` (`ESTUDIANTE`, `ADMINISTRADOR`) y `Estado` (`ACTIVO`, `INACTIVO`). M
 - `POST /api/v1/auth/registro` — cuerpo: `nombres`, `apellidos`, `correo`, `contrasena` (mínimo 8 caracteres), `codigoEstudiantil`, `facultad`, `carrera`. Crea siempre rol `ESTUDIANTE`. **201** con `data` = usuario (sin contraseña). Errores: `CORREO_EXISTENTE`, `CODIGO_EXISTENTE`, `CORREO_NO_INSTITUCIONAL`.
 - `POST /api/v1/auth/login` — cuerpo: `correo`, `contrasena`. **200** con `data: { token, usuario }`. El token es un JWT **RS256** de 1 hora con `sub`, `rol`, `correo`, `facultad`, `carrera`. Credenciales incorrectas, correo inexistente o usuario inactivo responden **el mismo** `401 CREDENCIALES_INVALIDAS`. Tras 5 intentos fallidos del mismo correo en 15 minutos responde `429 DEMASIADOS_INTENTOS` (contador en memoria; se reinicia con un login exitoso).
 - `GET /api/v1/auth/me` — autenticado. `data` = usuario actual.
-- `POST /api/v1/auth/cambiar-contrasena` — autenticado. Cuerpo: `contrasenaActual`, `contrasenaNueva` (mínimo 8). **204**. `401 CREDENCIALES_INVALIDAS` si la actual es incorrecta.
+- `POST /api/v1/auth/cambiar-contrasena` — autenticado. Cuerpo: `contrasenaActual`, `contrasenaNueva` (mínimo 8). **204**. `401 CREDENCIALES_INVALIDAS` si la actual es incorrecta; este error de negocio no invalida la sesión. El cliente solo cierra sesión ante `401 NO_AUTENTICADO` (token ausente, inválido o vencido).
 - `GET /api/v1/auth/clave-publica` — público. `data: { clavePublica }` (PEM).
 
 El objeto **usuario** que se devuelve siempre tiene: `id`, `nombres`, `apellidos`, `correo`, `codigoEstudiantil`, `facultad`, `carrera`, `rol`, `estado`, `creadoEn`.

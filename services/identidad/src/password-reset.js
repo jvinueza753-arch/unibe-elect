@@ -1,12 +1,12 @@
 const { createHash, randomBytes } = require('node:crypto');
 const bcrypt = require('bcryptjs');
 const { z } = require('zod');
+const { incrementarIntentos, limpiarIntentosExpirados } = require('./intentos');
 
 const REQUEST_MESSAGE = 'Si existe una cuenta estudiantil activa con ese correo, la solicitud será revisada por un administrador.';
 const INVALID_CODE_MESSAGE = 'El código no es válido o ya venció. Solicita una nueva recuperación.';
 const CODE_TTL_MS = 60 * 60 * 1000;
-const requestAttempts = new Map();
-let cleanupTicks = 0;
+const REQUEST_WINDOW_MS = 60 * 60 * 1000;
 
 const resetRequestSchema = z.object({
   correo: z.string().trim().email(),
@@ -20,26 +20,6 @@ function digest(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
-function allowRequest(key, now, limit = 5) {
-  const current = requestAttempts.get(key);
-  if (!current || current.expiresAt <= now) {
-    if (requestAttempts.size >= 10000) return false;
-    requestAttempts.set(key, { count: 1, expiresAt: now + 60 * 60 * 1000 });
-    return true;
-  }
-  if (current.count >= limit) return false;
-  current.count += 1;
-  return true;
-}
-
-function cleanupRequestAttempts(now) {
-  cleanupTicks += 1;
-  if (requestAttempts.size < 1000 || cleanupTicks % 100 !== 0) return;
-  for (const [key, attempt] of requestAttempts) {
-    if (attempt.expiresAt <= now) requestAttempts.delete(key);
-  }
-}
-
 function registerPasswordResetRoutes(app, { db, error, autenticar, requerirRol }) {
   app.post('/api/v1/auth/solicitudes-recuperacion', async (req, res) => {
     const parsed = resetRequestSchema.safeParse(req.body);
@@ -48,10 +28,10 @@ function registerPasswordResetRoutes(app, { db, error, autenticar, requerirRol }
     }
 
     const now = Date.now();
-    cleanupRequestAttempts(now);
+    await limpiarIntentosExpirados(db, now);
     const correo = parsed.data.correo.toLowerCase();
     const emailKey = `correo:${digest(correo)}`;
-    if (!allowRequest(emailKey, now)) {
+    if (await incrementarIntentos(db, emailKey, now, REQUEST_WINDOW_MS, 5) > 5) {
       return error(res, 429, 'DEMASIADAS_SOLICITUDES', 'Has realizado demasiadas solicitudes. Inténtalo más tarde.');
     }
 

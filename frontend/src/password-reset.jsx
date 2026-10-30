@@ -93,8 +93,18 @@ export function ResetPassword() {
       <h1>Crear una nueva contraseña</h1>
       <form className="panel" onSubmit={submit}>
         <label>Código entregado por el administrador
-          <input name="codigo" required autoComplete="one-time-code" />
+          <input
+            name="codigo"
+            required
+            autoComplete="one-time-code"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="Pega el código completo"
+          />
         </label>
+        <p className="muted reset-code-hint">
+          Pega aquí el código de un solo uso que te entregó el administrador. No uses una contraseña ni el valor guardado en la base de datos.
+        </p>
         <label>Nueva contraseña
           <input type="password" name="nueva" minLength="8" maxLength="128"
             required autoComplete="new-password" />

@@ -1,13 +1,17 @@
 const { createApp, error } = require('/shared/http');
 const { autenticar, requerirRol, emitir, publicKey } = require('/shared/auth');
 const bcrypt = require('bcryptjs');
+const { createHash } = require('node:crypto');
 const { z } = require('zod');
 const db = require('./db');
 const { registerPasswordResetRoutes } = require('./password-reset');
+const { incrementarIntentos, obtenerIntentos, reiniciarIntentos } = require('./intentos');
 const app = createApp('identidad'); app.locals.prisma = db;
 const registroSchema = z.object({ nombres:z.string().trim().min(1), apellidos:z.string().trim().min(1), correo:z.string().email(), contrasena:z.string().min(8), codigoEstudiantil:z.string().trim().min(1), facultad:z.string().trim().min(1), carrera:z.string().trim().min(1) });
 const publico = u => ({ id:u.id,nombres:u.nombres,apellidos:u.apellidos,correo:u.correo,codigoEstudiantil:u.codigoEstudiantil,facultad:u.facultad,carrera:u.carrera,rol:u.rol,estado:u.estado,creadoEn:u.creadoEn });
-const fallosLogin = new Map();
+const MAX_LOGIN_INTENTOS = 5;
+const LOGIN_VENTANA_MS = 15 * 60 * 1000;
+const hashCorreo = correo => createHash('sha256').update(correo).digest('hex');
 app.post('/api/v1/auth/registro', async (req,res) => {
  const p=registroSchema.safeParse(req.body); if(!p.success)return error(res,400,'DATOS_INVALIDOS','Revisa los campos del registro',p.error.flatten().fieldErrors);
  const {contrasena,...b}=p.data; const correo=b.correo.trim().toLowerCase(); const dominio=(process.env.DOMINIO_CORREO_INSTITUCIONAL||'').trim().toLowerCase();
@@ -16,10 +20,10 @@ app.post('/api/v1/auth/registro', async (req,res) => {
  catch(e){if(e.code==='P2002')return error(res,409,e.meta?.target?.includes('codigoEstudiantil')?'CODIGO_EXISTENTE':'CORREO_EXISTENTE','El correo o código estudiantil ya está registrado'); throw e; }
 });
 app.post('/api/v1/auth/login', async (req,res) => {
- const correo=String(req.body?.correo||'').trim().toLowerCase(), ahora=Date.now(); const intento=fallosLogin.get(correo); if(intento && intento.hasta>ahora && intento.cantidad>=5)return error(res,429,'DEMASIADOS_INTENTOS','Demasiados intentos. Espera 15 minutos');
+ const correo=String(req.body?.correo||'').trim().toLowerCase(), ahora=Date.now(), claveIntento=`login:${hashCorreo(correo)}`; if(await obtenerIntentos(db,claveIntento,ahora)>=MAX_LOGIN_INTENTOS)return error(res,429,'DEMASIADOS_INTENTOS','Demasiados intentos. Espera 15 minutos');
  const u=await db.usuario.findUnique({where:{correo}}); const valido=u && u.estado==='ACTIVO' && await bcrypt.compare(String(req.body?.contrasena||''),u.contrasenaHash);
- if(!valido){const actual=intento&&intento.hasta>ahora?intento:{cantidad:0,hasta:ahora+15*60*1000};actual.cantidad++;fallosLogin.set(correo,actual);if(actual.cantidad>=5)return error(res,429,'DEMASIADOS_INTENTOS','Demasiados intentos. Espera 15 minutos');return error(res,401,'CREDENCIALES_INVALIDAS','Correo o contraseña incorrectos');}
- fallosLogin.delete(correo); const usuario=publico(u); const token=emitir({sub:u.id,rol:u.rol,correo:u.correo,facultad:u.facultad,carrera:u.carrera});res.json({data:{token,usuario}});
+ if(!valido){const intentos=await incrementarIntentos(db,claveIntento,ahora,LOGIN_VENTANA_MS,MAX_LOGIN_INTENTOS);if(intentos>=MAX_LOGIN_INTENTOS)return error(res,429,'DEMASIADOS_INTENTOS','Demasiados intentos. Espera 15 minutos');return error(res,401,'CREDENCIALES_INVALIDAS','Correo o contraseña incorrectos');}
+ await reiniciarIntentos(db,claveIntento); const usuario=publico(u); const token=emitir({sub:u.id,rol:u.rol,correo:u.correo,facultad:u.facultad,carrera:u.carrera});res.json({data:{token,usuario}});
 });
 app.get('/api/v1/auth/me',autenticar,async(req,res)=>{const u=await db.usuario.findUnique({where:{id:req.usuario.sub}});if(!u||u.estado!=='ACTIVO')return error(res,401,'NO_AUTENTICADO','La sesión ya no es válida');res.json({data:publico(u)});});
 app.post('/api/v1/auth/cambiar-contrasena',autenticar,async(req,res)=>{const u=await db.usuario.findUnique({where:{id:req.usuario.sub}});if(!u||!await bcrypt.compare(String(req.body?.contrasenaActual||''),u.contrasenaHash))return error(res,401,'CREDENCIALES_INVALIDAS','La contraseña actual es incorrecta');const p=z.string().min(8).safeParse(req.body?.contrasenaNueva);if(!p.success)return error(res,400,'DATOS_INVALIDOS','La nueva contraseña debe tener al menos 8 caracteres');await db.usuario.update({where:{id:u.id},data:{contrasenaHash:await bcrypt.hash(p.data,12)}});res.status(204).end();});

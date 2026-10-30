@@ -54,7 +54,6 @@ export function Login() {
         <button className="primary" disabled={busy}>
           {busy ? 'Ingresando…' : 'Ingresar'} <span>→</span>
         </button>
-        <p className="muted tiny">Administrador de demostración: admin@unibe.edu.ec · Admin12345!</p>
         <Link className="link" to="/recuperar-contrasena">¿Olvidaste tu contraseña?</Link>
         <Link className="link" to="/registro">¿Eres estudiante? Crear cuenta</Link>
       </form>

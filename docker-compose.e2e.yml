@@ -1,0 +1,68 @@
+services:
+  postgres:
+    environment:
+      E2E_ISOLATED_DATABASE: "true"
+    ports: !override
+      - "5434:5432"
+    volumes: !override
+      - postgres_e2e_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh:ro
+
+  identidad:
+    environment:
+      NODE_ENV: test
+      E2E_ISOLATED_DATABASE: "true"
+      E2E_TEST_DATABASE_PREFIX: unibe_test
+      DATABASE_URL: postgresql://identidad:identidad_dev@postgres:5432/unibe_test_identidad?schema=public
+      ALLOW_DEMO_SEED: "true"
+      DEMO_ADMIN_PASSWORD: ${E2E_DEMO_ADMIN_PASSWORD:-E2E-Admin-Password-2026!}
+      DEMO_STUDENT_PASSWORD: ${E2E_DEMO_STUDENT_PASSWORD:-E2E-Student-Password-2026!}
+    ports: !override
+      - "4101:4001"
+
+  elecciones:
+    environment:
+      NODE_ENV: test
+      E2E_ISOLATED_DATABASE: "true"
+      E2E_TEST_DATABASE_PREFIX: unibe_test
+      DATABASE_URL: postgresql://elecciones:elecciones_dev@postgres:5432/unibe_test_elecciones?schema=public
+    ports: !override
+      - "4102:4002"
+
+  votacion:
+    environment:
+      NODE_ENV: test
+      E2E_ISOLATED_DATABASE: "true"
+      E2E_TEST_DATABASE_PREFIX: unibe_test
+      DATABASE_URL: postgresql://votacion:votacion_dev@postgres:5432/unibe_test_votacion?schema=public
+    ports: !override
+      - "4103:4003"
+
+  resultados:
+    environment:
+      NODE_ENV: test
+      E2E_ISOLATED_DATABASE: "true"
+      E2E_TEST_DATABASE_PREFIX: unibe_test
+      DATABASE_URL: postgresql://resultados:resultados_dev@postgres:5432/unibe_test_resultados?schema=public
+    ports: !override
+      - "4104:4004"
+
+  gateway:
+    environment:
+      NODE_ENV: test
+      E2E_ISOLATED_DATABASE: "true"
+      E2E_TEST_DATABASE_PREFIX: unibe_test
+    ports: !override
+      - "3100:3000"
+
+  frontend:
+    ports: !override
+      - "5174:5173"
+
+volumes:
+  postgres_e2e_data:
+    name: unibe-elect-e2e-postgres-data
+  jwt_private:
+    name: unibe-elect-e2e-jwt-private
+  jwt_public:
+    name: unibe-elect-e2e-jwt-public

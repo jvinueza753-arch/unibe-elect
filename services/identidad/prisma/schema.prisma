@@ -50,3 +50,10 @@ model SolicitudRecuperacion {
   @@index([estado, solicitadaEn])
   @@map("solicitudes_recuperacion")
 }
+model LimiteIntento {
+  clave String @id
+  intentos Int
+  expiraEn DateTime
+  @@index([expiraEn])
+  @@map("limites_intentos")
+}

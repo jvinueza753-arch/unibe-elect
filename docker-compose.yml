@@ -6,7 +6,7 @@ services:
       POSTGRES_PASSWORD: postgres_dev_only
       POSTGRES_DB: postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh:ro
@@ -31,8 +31,11 @@ services:
       context: .
       dockerfile: services/identidad/Dockerfile
     environment: &common
-      NODE_ENV: development
-      CLAVE_INTERNA: dev-internal-key-change-me
+      NODE_ENV: ${NODE_ENV:-development}
+      CLAVE_INTERNA: ${CLAVE_INTERNA:-dev-internal-key-change-me}
+      ALLOW_DEMO_SEED: ${ALLOW_DEMO_SEED:-false}
+      DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD:-}
+      DEMO_STUDENT_PASSWORD: ${DEMO_STUDENT_PASSWORD:-}
       JWT_PRIVATE_KEY_PATH: /run/jwt/private/private.pem
       JWT_PUBLIC_KEY_PATH: /run/jwt/public/public.pem
       DATABASE_URL: postgresql://identidad:identidad_dev@postgres:5432/unibe_identidad?schema=public
