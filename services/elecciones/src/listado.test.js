@@ -20,6 +20,7 @@ describe('filtro y paginación de elecciones', () => {
     expect(db.eleccion.count).toHaveBeenCalledWith({
       where: {
         estadoGuardado: 'PUBLICADA',
+        cerradaEn: null,
         fechaApertura: { lte: now },
         fechaCierre: { gt: now },
       },
@@ -48,5 +49,15 @@ describe('filtro y paginación de elecciones', () => {
   test('normaliza parámetros de página y limita tamaño de página', () => {
     expect(parsePagination('2.9', '250')).toEqual({ pagina: 2, limite: 100 });
     expect(parsePagination('0', '-1')).toEqual({ pagina: 1, limite: 1 });
+  });
+
+  test('el filtro CERRADA incluye cierres anticipados o por fecha', () => {
+    expect(buildElectionWhere('ADMINISTRADOR', 'CERRADA', now)).toEqual({
+      estadoGuardado: 'PUBLICADA',
+      OR: [
+        { cerradaEn: { not: null } },
+        { fechaCierre: { lte: now } },
+      ],
+    });
   });
 });

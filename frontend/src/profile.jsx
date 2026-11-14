@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
 import { Shell, useAuth } from './common';
+import { PasswordField } from './password-field';
 
 export function Profile() {
   const { api, user } = useAuth();
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordValid, setPasswordValid] = useState(false);
+  const [passwordErrors, setPasswordErrors] = useState([]);
 
   async function submit(event) {
     event.preventDefault();
@@ -13,16 +18,21 @@ export function Profile() {
     setBusy(true);
     setError('');
     setMessage('');
-    const form = new FormData(formElement);
     try {
       await api('/auth/cambiar-contrasena', {
         method: 'POST',
-        body: JSON.stringify({ contrasenaActual: form.get('actual'), contrasenaNueva: form.get('nueva') }),
+        body: JSON.stringify({ contrasenaActual: currentPassword, contrasenaNueva: newPassword }),
       });
       formElement.reset();
+      setCurrentPassword('');
+      setNewPassword('');
+      setPasswordValid(false);
       setMessage('Contraseña actualizada.');
     } catch (cause) {
-      setError(cause.message);
+      setPasswordErrors(cause.details?.contrasena || (
+        cause.code === 'CONTRASENA_REUTILIZADA' ? ['CONTRASENA_REUTILIZADA'] : []
+      ));
+      setError(cause.details?.contrasena || cause.code === 'CONTRASENA_REUTILIZADA' ? '' : cause.message);
     } finally {
       setBusy(false);
     }
@@ -57,13 +67,25 @@ export function Profile() {
           <div className="profile-heading">
             <span className="eyebrow">SEGURIDAD</span>
             <h2>Cambiar contraseña</h2>
-            <p>Usa una contraseña nueva de al menos 8 caracteres.</p>
+            <p>Usa una contraseña nueva de al menos 10 caracteres.</p>
           </div>
-          <label>Contraseña actual<input type="password" name="actual" required autoComplete="current-password" /></label>
-          <label>Nueva contraseña<input type="password" name="nueva" minLength={8} maxLength={128} required autoComplete="new-password" /></label>
+          <label>Contraseña actual<input type="password" name="actual" value={currentPassword}
+            onChange={(event) => { setCurrentPassword(event.target.value); setPasswordErrors([]); }}
+            required autoComplete="current-password" /></label>
+          <PasswordField
+            name="nueva"
+            label="Nueva contraseña"
+            value={newPassword}
+            onChange={(event) => { setNewPassword(event.target.value); setPasswordErrors([]); }}
+            correo={user.correo}
+            codigoEstudiantil={user.codigoEstudiantil}
+            currentPassword={currentPassword}
+            errorCodes={passwordErrors}
+            onValidityChange={setPasswordValid}
+          />
           {error && <p className="error" role="alert">{error}</p>}
           {message && <p className="success" role="status" aria-live="polite">{message}</p>}
-          <button className="primary" disabled={busy}>{busy ? 'Actualizando…' : 'Actualizar contraseña'}</button>
+          <button className="primary" disabled={busy || !passwordValid}>{busy ? 'Actualizando…' : 'Actualizar contraseña'}</button>
         </form>
       </section>
     </Shell>

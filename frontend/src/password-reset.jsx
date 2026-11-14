@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { toast } from 'sonner';
 import { confirmAction, useAuth } from './common';
+import { PasswordField } from './password-field';
 
 export function RequestPasswordReset() {
   const { api } = useAuth();
@@ -56,13 +57,15 @@ export function ResetPassword() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [contrasenaNueva, setContrasenaNueva] = useState('');
+  const [passwordValid, setPasswordValid] = useState(false);
+  const [passwordErrors, setPasswordErrors] = useState([]);
 
   async function submit(event) {
     event.preventDefault();
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const codigo = String(form.get('codigo') || '').trim();
-    const contrasenaNueva = String(form.get('nueva') || '');
     if (contrasenaNueva !== form.get('confirmar')) {
       setError('Las contraseñas no coinciden.');
       return;
@@ -77,10 +80,16 @@ export function ResetPassword() {
         body: JSON.stringify({ codigo, contrasenaNueva }),
       });
       formElement.reset();
+      setContrasenaNueva('');
+      setPasswordValid(false);
+      setPasswordErrors([]);
       setMessage('Tu contraseña fue actualizada. Ya puedes iniciar sesión.');
       toast.success('Contraseña actualizada.');
     } catch (cause) {
-      setError(cause.message);
+      setPasswordErrors(cause.details?.contrasena || (
+        cause.code === 'CONTRASENA_REUTILIZADA' ? ['CONTRASENA_REUTILIZADA'] : []
+      ));
+      setError(cause.details?.contrasena || cause.code === 'CONTRASENA_REUTILIZADA' ? '' : cause.message);
     } finally {
       setBusy(false);
     }
@@ -105,17 +114,22 @@ export function ResetPassword() {
         <p className="muted reset-code-hint">
           Pega aquí el código de un solo uso que te entregó el administrador. No uses una contraseña ni el valor guardado en la base de datos.
         </p>
-        <label>Nueva contraseña
-          <input type="password" name="nueva" minLength="8" maxLength="128"
-            required autoComplete="new-password" />
-        </label>
+        <PasswordField
+          name="nueva"
+          label="Nueva contraseña"
+          value={contrasenaNueva}
+          onChange={(event) => { setContrasenaNueva(event.target.value); setPasswordErrors([]); }}
+          errorCodes={passwordErrors}
+          onValidityChange={setPasswordValid}
+        />
+        <p className="muted">Usa al menos 10 caracteres y máximo 72 bytes UTF-8.</p>
         <label>Confirmar nueva contraseña
-          <input type="password" name="confirmar" minLength="8" maxLength="128"
+          <input type="password" name="confirmar" minLength="10" maxLength="128"
             required autoComplete="new-password" />
         </label>
         {error && <p className="error" role="alert">{error}</p>}
         {message && <p className="success" role="status">{message}</p>}
-        <button className="primary" disabled={busy}>
+        <button className="primary" disabled={busy || !passwordValid}>
           {busy ? 'Actualizando contraseña…' : 'Guardar contraseña'}
         </button>
       </form>
@@ -130,30 +144,65 @@ const statusLabel = {
   COMPLETADA: 'Completada',
   EXPIRADA: 'Código vencido',
 };
+const statusDescription = {
+  PENDIENTE: 'Espera revisión del administrador. Volver a solicitar refresca la prioridad y la fecha.',
+  APROBADA: 'El código es de un solo uso y vence en una hora. Si se perdió, se puede reemitir mientras siga vigente.',
+  RECHAZADA: 'La solicitud fue rechazada; el estudiante puede volver a solicitar recuperación.',
+  COMPLETADA: 'La contraseña se restableció y el código ya no se puede utilizar.',
+  EXPIRADA: 'La solicitud o el código venció; el estudiante puede iniciar una nueva solicitud.',
+};
 
 export function AdminPasswordResetRequests() {
   const { api } = useAuth();
   const [items, setItems] = useState([]);
+  const [meta, setMeta] = useState({ pagina: 1, limite: 20, total: 0, totalPaginas: 1, pendientes: 0 });
+  const [estado, setEstado] = useState('');
+  const [busqueda, setBusqueda] = useState('');
+  const [textoBusqueda, setTextoBusqueda] = useState('');
+  const [pagina, setPagina] = useState(1);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
   const [issuedCode, setIssuedCode] = useState(null);
+  const issuedCodeRef = useRef(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async ({ quiet = false } = {}) => {
+    if (!quiet) setLoading(true);
     setError('');
     try {
-      setItems(await api('/admin/solicitudes-recuperacion'));
+      const query = new URLSearchParams({ pagina: String(pagina), limite: '20' });
+      if (estado) query.set('estado', estado);
+      if (busqueda) query.set('busqueda', busqueda);
+      const result = await api(`/admin/solicitudes-recuperacion?${query}`);
+      setItems(result.items);
+      setMeta(result.meta);
     } catch (cause) {
       setError(cause.message);
     } finally {
-      setLoading(false);
+      if (!quiet) setLoading(false);
     }
-  }, [api]);
+  }, [api, busqueda, estado, pagina]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    const timer = setInterval(() => load({ quiet: true }), 30000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPagina(1);
+      setBusqueda(textoBusqueda.trim());
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [textoBusqueda]);
+
+  useEffect(() => {
+    if (issuedCode) issuedCodeRef.current?.focus();
+  }, [issuedCode]);
 
   async function approve(id) {
+    if (!await confirmAction('¿Aprobar la solicitud?', 'Se generará un código de un solo uso para el estudiante.')) return;
     setBusyId(id);
     setError('');
     setIssuedCode(null);
@@ -164,6 +213,29 @@ export function AdminPasswordResetRequests() {
       });
       setIssuedCode(result);
       toast.success('Solicitud aprobada. Copia el código y entrégalo al estudiante por un canal seguro.');
+      await load();
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setBusyId('');
+    }
+  }
+
+  async function reissue(request) {
+    if (!await confirmAction(
+      '¿Reemitir el código?',
+      `El código anterior para ${request.usuario.correo} dejará de funcionar inmediatamente.`,
+    )) return;
+    setBusyId(request.id);
+    setError('');
+    setIssuedCode(null);
+    try {
+      const result = await api(`/admin/solicitudes-recuperacion/${request.id}/reemitir`, {
+        method: 'POST',
+        body: '{}',
+      });
+      setIssuedCode(result);
+      toast.success('Código reemitido. El código anterior quedó invalidado.');
       await load();
     } catch (cause) {
       setError(cause.message);
@@ -205,26 +277,52 @@ export function AdminPasswordResetRequests() {
   }
 
   return (
-    <section className="panel section-panel">
+    <section className="panel section-panel" role="region" aria-labelledby="password-reset-heading">
       <div className="section-head">
         <div>
           <span className="eyebrow">SEGURIDAD DE CUENTAS</span>
-          <h2>Solicitudes de recuperación</h2>
+          <h2 id="password-reset-heading">Solicitudes de recuperación</h2>
         </div>
-        <button className="secondary" type="button" onClick={load} disabled={loading}>
+        <button className="secondary" type="button" onClick={() => load()} disabled={loading}>
           Actualizar
         </button>
       </div>
       <p className="muted">
-        El código se muestra una sola vez al aprobar. Entrégalo directamente al estudiante; vence en una hora.
+        Las pendientes aparecen primero. Los códigos se muestran una vez, vencen en una hora y solo deben entregarse por un canal seguro.
       </p>
+      <div className="action-row" role="search" aria-label="Buscar solicitudes de recuperación">
+        <label>
+          Estado
+          <select
+            aria-label="Filtrar por estado"
+            value={estado}
+            onChange={(event) => { setEstado(event.target.value); setPagina(1); }}
+          >
+            <option value="">Todos los estados</option>
+            {Object.entries(statusLabel).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+          </select>
+        </label>
+        <label>
+          Correo o código estudiantil
+          <input
+            aria-label="Buscar por correo o código estudiantil"
+            type="search"
+            value={textoBusqueda}
+            onChange={(event) => setTextoBusqueda(event.target.value)}
+            placeholder="Buscar solicitudes"
+          />
+        </label>
+        <span className="status" role="status" aria-live="polite">
+          Pendientes: {meta.pendientes}
+        </span>
+      </div>
       {error && <p className="error" role="alert">{error}</p>}
       {issuedCode && (
-        <div className="panel reset-code" role="status">
+        <div className="panel reset-code" role="status" aria-live="polite">
           <b>Código de un solo uso para {issuedCode.correo}</b>
           <p className="muted">{issuedCode.mensaje}</p>
           <div className="action-row">
-            <input aria-label="Código de recuperación" readOnly value={issuedCode.codigo} />
+            <input ref={issuedCodeRef} aria-label="Código de recuperación" readOnly value={issuedCode.codigo} />
             <button className="secondary" type="button" onClick={copyCode}>Copiar código</button>
           </div>
           <small>Vence: {new Date(issuedCode.codigoExpira).toLocaleString()}</small>
@@ -233,14 +331,27 @@ export function AdminPasswordResetRequests() {
       {loading ? <p role="status">Cargando solicitudes…</p> : items.length === 0 ? (
         <div className="empty"><h3>No hay solicitudes de recuperación</h3></div>
       ) : (
-        <div className="list">
+        <div className="list" aria-busy={loading}>
           {items.map((request) => (
             <article className="panel election" key={request.id}>
               <div>
                 <span className="status">{statusLabel[request.estado] || request.estado}</span>
                 <h3>{request.usuario.nombres} {request.usuario.apellidos}</h3>
-                <p className="muted">{request.usuario.correo} · Código: {request.usuario.codigoEstudiantil}</p>
-                <small>Solicitada: {new Date(request.solicitadaEn).toLocaleString()}</small>
+                <p className="muted">{request.usuario.correo} · Cód. estudiantil: {request.usuario.codigoEstudiantil}</p>
+                <p className="muted">{statusDescription[request.estado] || 'Consulta al estudiante o revisa el historial de la solicitud.'}</p>
+                <small>Solicitud/prioridad actualizada: {new Date(request.solicitadaEn).toLocaleString()}</small>
+                {request.aprobadaEn && (
+                  <p><small>Aprobada: {new Date(request.aprobadaEn).toLocaleString()} · {request.aprobadaPor?.nombres} {request.aprobadaPor?.apellidos}</small></p>
+                )}
+                {request.rechazadaEn && (
+                  <p><small>Rechazada: {new Date(request.rechazadaEn).toLocaleString()} · {request.rechazadaPor?.nombres} {request.rechazadaPor?.apellidos}</small></p>
+                )}
+                {request.reemitidaEn && (
+                  <p><small>Última reemisión: {new Date(request.reemitidaEn).toLocaleString()} · {request.reemitidaPor?.nombres} {request.reemitidaPor?.apellidos}</small></p>
+                )}
+                {request.resueltaEn && (
+                  <p><small>Resuelta: {new Date(request.resueltaEn).toLocaleString()}</small></p>
+                )}
               </div>
               {request.estado === 'PENDIENTE' && (
                 <div className="action-row">
@@ -255,11 +366,32 @@ export function AdminPasswordResetRequests() {
                 </div>
               )}
               {request.codigoExpira && request.estado === 'APROBADA' && (
-                <small>Código vence: {new Date(request.codigoExpira).toLocaleString()}</small>
+                <div className="action-row">
+                  <small>Código vigente hasta: {new Date(request.codigoExpira).toLocaleString()}</small>
+                  {new Date(request.codigoExpira).getTime() > Date.now() && (
+                    <button className="secondary" type="button" disabled={busyId === request.id}
+                      onClick={() => reissue(request)}>
+                      {busyId === request.id ? 'Procesando…' : 'Reemitir código'}
+                    </button>
+                  )}
+                </div>
               )}
             </article>
           ))}
         </div>
+      )}
+      {!loading && meta.totalPaginas > 1 && (
+        <nav className="action-row" aria-label="Paginación de solicitudes de recuperación">
+          <button className="secondary" type="button" disabled={pagina <= 1 || loading}
+            onClick={() => setPagina((current) => current - 1)}>
+            Anterior
+          </button>
+          <span aria-current="page">Página {pagina} de {meta.totalPaginas} · {meta.total} solicitudes</span>
+          <button className="secondary" type="button" disabled={pagina >= meta.totalPaginas || loading}
+            onClick={() => setPagina((current) => current + 1)}>
+            Siguiente
+          </button>
+        </nav>
       )}
     </section>
   );

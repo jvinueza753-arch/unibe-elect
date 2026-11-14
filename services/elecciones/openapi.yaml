@@ -25,6 +25,16 @@ paths:
               required: [titulo, fechaApertura, fechaCierre]
               properties:
                 titulo: { type: string }
+                descripcion: { type: string, nullable: true }
+                tipo:
+                  type: string
+                  enum: [CANDIDATURAS, REFERENDUM, PLANCHAS]
+                  default: CANDIDATURAS
+                pregunta:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+                  description: Obligatoria en referéndums
                 fechaApertura: { type: string, format: date-time }
                 fechaCierre: { type: string, format: date-time }
                 candidaturasRequeridas:
@@ -32,9 +42,124 @@ paths:
                   minimum: 2
                   maximum: 100
                   default: 2
+                cargosRequeridos:
+                  type: array
+                  description: Obligatorio solo para elecciones de planchas
+                  items:
+                    type: string
+                    enum: [PRESIDENTE, VICEPRESIDENTE, SECRETARIO, TESORERO, VOCAL]
+                facultadesPermitidas:
+                  type: array
+                  items: { type: string }
+                carrerasPermitidas:
+                  type: array
+                  items: { type: string }
+                ordenAleatorio: { type: boolean, default: true }
       responses:
         '201': { description: Borrador creado }
         '400': { description: Datos inválidos }
+  /api/v1/elecciones/catalogos:
+    get:
+      summary: Obtener tipos y catálogos para configurar elecciones
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Tipos, facultades, carreras, cargos y opciones de referéndum }
+  /api/v1/elecciones/{id}/candidaturas:
+    get:
+      summary: Listar candidaturas e integrantes de una elección
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '200': { description: Candidaturas ordenadas para el administrador o estudiante }
+        '404': { description: Elección no encontrada }
+    post:
+      summary: Crear candidatura o plancha en un borrador
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Candidatura'
+      responses:
+        '201': { description: Candidatura creada }
+        '422': { description: Elección no editable u opciones fijas de referéndum }
+  /api/v1/elecciones/{id}/candidaturas/{candidaturaId}:
+    patch:
+      summary: Actualizar candidatura o integrantes de plancha
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+        - $ref: '#/components/parameters/candidaturaId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CandidaturaPatch'
+      responses:
+        '200': { description: Candidatura actualizada }
+        '400': { description: Datos inválidos }
+        '422': { description: Elección no editable u opciones fijas de referéndum }
+    delete:
+      summary: Eliminar candidatura de un borrador
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+        - $ref: '#/components/parameters/candidaturaId'
+      responses:
+        '204': { description: Candidatura eliminada }
+        '404': { description: Candidatura no encontrada }
+  /api/v1/elecciones/{id}/candidaturas/{candidaturaId}/foto:
+    put:
+      summary: Cargar foto de candidatura (máximo 2 MiB)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+        - $ref: '#/components/parameters/candidaturaId'
+      requestBody:
+        required: true
+        content:
+          image/png: { schema: { type: string, format: binary } }
+          image/jpeg: { schema: { type: string, format: binary } }
+          image/webp: { schema: { type: string, format: binary } }
+      responses:
+        '200': { description: Foto almacenada }
+        '400': { description: Firma de imagen inválida }
+        '413': { description: Imagen superior a 2 MiB }
+        '415': { description: Tipo de imagen no permitido }
+    delete:
+      summary: Eliminar foto de candidatura
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+        - $ref: '#/components/parameters/candidaturaId'
+      responses:
+        '204': { description: Foto eliminada }
+        '404': { description: Candidatura no encontrada }
+  /api/v1/elecciones/imagenes/{id}:
+    get:
+      summary: Obtener una foto de candidatura
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Imagen PNG, JPEG o WebP; respuesta con nosniff }
+        '404': { description: Imagen no encontrada }
+  /api/v1/elecciones/{id}/publicar:
+    post:
+      summary: Publicar borrador después de validar sus candidaturas
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '200': { description: Elección publicada }
+        '422': { description: Candidaturas insuficientes, opciones fijas alteradas o planchas incompletas }
   /api/v1/elecciones/estudiante:
     get:
       summary: Listar elecciones elegibles con estado de participación del estudiante
@@ -48,6 +173,31 @@ paths:
       responses:
         '200': { description: Totales habilitados, participaciones y pendientes por elección }
         '503': { description: Servicio de identidad o votación no disponible }
+  /api/v1/elecciones/{id}/cerrar:
+    post:
+      summary: Cerrar anticipadamente una elección abierta
+      description: Registra la hora, el actor y el motivo sin cambiar la fecha de cierre programada.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '200': { description: Elección cerrada; `fechaCierre` permanece programada y la respuesta incluye metadatos de cierre }
+        '400': { description: Motivo ausente o inválido }
+        '403': { description: Se requiere rol administrador }
+        '404': { description: Elección no encontrada }
+        '422': { description: La elección no está abierta o ya fue cerrada }
   /api/v1/elecciones/{id}/participacion:
     get:
       summary: Consultar participación agregada de una elección abierta
@@ -62,6 +212,57 @@ paths:
         '403': { description: Estudiante no habilitado }
         '422': { description: Elección no abierta }
 components:
+  parameters:
+    eleccionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    candidaturaId:
+      name: candidaturaId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  schemas:
+    Candidatura:
+      type: object
+      required: [nombre]
+      properties:
+        nombre: { type: string, minLength: 1 }
+        descripcion: { type: string, maxLength: 2000, nullable: true }
+        lema: { type: string, maxLength: 140, nullable: true }
+        propuestas:
+          type: array
+          maxItems: 10
+          items: { type: string, minLength: 1, maxLength: 200 }
+        integrantes:
+          type: array
+          items:
+            type: object
+            required: [cargo, nombre]
+            properties:
+              cargo: { type: string, enum: [PRESIDENTE, VICEPRESIDENTE, SECRETARIO, TESORERO, VOCAL] }
+              nombre: { type: string, minLength: 1 }
+              orden: { type: integer, minimum: 0 }
+    CandidaturaPatch:
+      type: object
+      properties:
+        nombre: { type: string, minLength: 1 }
+        descripcion: { type: string, maxLength: 2000, nullable: true }
+        lema: { type: string, maxLength: 140, nullable: true }
+        propuestas:
+          type: array
+          maxItems: 10
+          items: { type: string, minLength: 1, maxLength: 200 }
+        integrantes:
+          type: array
+          items:
+            type: object
+            required: [cargo, nombre]
+            properties:
+              cargo: { type: string, enum: [PRESIDENTE, VICEPRESIDENTE, SECRETARIO, TESORERO, VOCAL] }
+              nombre: { type: string, minLength: 1 }
+              orden: { type: integer, minimum: 0 }
   securitySchemes:
     bearerAuth:
       type: http

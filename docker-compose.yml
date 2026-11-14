@@ -39,7 +39,10 @@ services:
       JWT_PRIVATE_KEY_PATH: /run/jwt/private/private.pem
       JWT_PUBLIC_KEY_PATH: /run/jwt/public/public.pem
       DATABASE_URL: postgresql://identidad:identidad_dev@postgres:5432/unibe_identidad?schema=public
+      IDENTIDAD_URL: http://identidad:4001
       DOMINIO_CORREO_INSTITUCIONAL: ""
+      RECUPERACION_PENDIENTE_TTL_HORAS: ${RECUPERACION_PENDIENTE_TTL_HORAS:-72}
+      RECUPERACION_RETENCION_DIAS: ${RECUPERACION_RETENCION_DIAS:-90}
       PORT: 4001
     volumes:
       - jwt_private:/run/jwt/private:ro
@@ -49,7 +52,6 @@ services:
         condition: service_healthy
       claves:
         condition: service_completed_successfully
-    ports: ["4001:4001"]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:4001/health | grep -q ok"]
       interval: 10s
@@ -144,7 +146,8 @@ services:
       RESULTADOS_URL: http://resultados:4004
       LIMITE_GENERAL: 100000
       LIMITE_LOGIN: 100000
-      LIMITE_RECUPERACION: 100000
+      LIMITE_RECUPERACION: 10
+      LIMITE_RESTABLECER: 20
       LIMITE_VOTACION: 100000
     depends_on:
       identidad:

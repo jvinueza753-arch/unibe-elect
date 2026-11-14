@@ -32,9 +32,13 @@ model Usuario {
   carrera String
   rol Rol @default(ESTUDIANTE)
   estado Estado @default(ACTIVO)
+  sessionVersion Int @default(0)
   creadoEn DateTime @default(now())
   actualizadoEn DateTime @updatedAt
   solicitudesRecuperacion SolicitudRecuperacion[]
+  solicitudesAprobadas SolicitudRecuperacion[] @relation("SolicitudRecuperacionAprobador")
+  solicitudesRechazadas SolicitudRecuperacion[] @relation("SolicitudRecuperacionRechazador")
+  solicitudesReemitidas SolicitudRecuperacion[] @relation("SolicitudRecuperacionReemisor")
   @@index([facultad, carrera])
   @@map("usuarios")
 }
@@ -46,7 +50,16 @@ model SolicitudRecuperacion {
   codigoExpira DateTime?
   solicitadaEn DateTime @default(now())
   resueltaEn DateTime?
+  aprobadaPorId String? @db.Uuid
+  aprobadaEn DateTime?
+  rechazadaPorId String? @db.Uuid
+  rechazadaEn DateTime?
+  reemitidaPorId String? @db.Uuid
+  reemitidaEn DateTime?
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  aprobadaPor Usuario? @relation("SolicitudRecuperacionAprobador", fields: [aprobadaPorId], references: [id], onDelete: SetNull)
+  rechazadaPor Usuario? @relation("SolicitudRecuperacionRechazador", fields: [rechazadaPorId], references: [id], onDelete: SetNull)
+  reemitidaPor Usuario? @relation("SolicitudRecuperacionReemisor", fields: [reemitidaPorId], references: [id], onDelete: SetNull)
   @@index([estado, solicitadaEn])
   @@map("solicitudes_recuperacion")
 }
