@@ -1,29 +1,193 @@
 openapi: 3.0.3
 info:
-  title: UNIBE Elect - votacion
-  version: 1.0.0
-  description: API del microservicio votacion.
+  title: UNIBE Elect - Microservicio de votación
+  version: 1.1.0
+  description: >-
+    Emisión anónima de votos, consulta de participación y verificación de comprobantes.
+    El comprobante confirma participación; nunca identifica la candidatura seleccionada.
+
 servers:
   - url: http://localhost:4003
+
 paths:
   /health:
     get:
       summary: Comprobar salud del servicio y base de datos
       responses:
-        '200': { description: Servicio disponible }
-        '503': { description: Base de datos no disponible }
-  /internal/votacion/elecciones/{id}/total-participacion:
-    get:
-      summary: Consultar el total agregado de participaciones de una elección
+        '200':
+          description: Servicio disponible
+        '503':
+          description: Base de datos no disponible
+
+  /api/v1/votacion/elecciones/{id}/votos:
+    post:
+      summary: Registrar un voto anónimo
+      description: >-
+        Solo estudiantes autenticados. candidaturaId debe ser un UUID o null explícito
+        para votar en blanco. La base de datos garantiza un voto por estudiante y elección.
+      security:
+        - bearerAuth: []
       parameters:
-        - name: id
+        - $ref: '#/components/parameters/EleccionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [candidaturaId]
+              properties:
+                candidaturaId:
+                  type: string
+                  format: uuid
+                  nullable: true
+      responses:
+        '201':
+          description: Voto registrado; se devuelve únicamente el comprobante y la fecha de participación
+        '400':
+          description: Datos inválidos, UUID incorrecto o propiedad candidaturaId ausente
+        '401':
+          description: Token ausente, inválido o vencido
+        '403':
+          description: Rol incorrecto o estudiante no habilitado
+        '409':
+          description: El estudiante ya votó en esta elección
+        '422':
+          description: Elección cerrada o candidatura inválida
+        '503':
+          description: No se pudo validar la elección
+
+  /api/v1/votacion/elecciones/{id}/mi-participacion:
+    get:
+      summary: Consultar la participación del estudiante autenticado
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/EleccionId'
+      responses:
+        '200':
+          description: Estado de participación sin revelar la candidatura
+        '401':
+          description: Token ausente, inválido o vencido
+        '403':
+          description: Solo estudiantes pueden consultar esta ruta
+        '400':
+          description: Identificador de elección inválido
+
+  /api/v1/votacion/comprobantes/{comprobante}/verificar:
+    get:
+      summary: Verificar un comprobante de participación
+      description: >-
+        Ruta pública. Un comprobante válido confirma que se registró una participación.
+        La respuesta no revela estudiante, elección, facultad, carrera ni candidatura.
+      parameters:
+        - name: comprobante
           in: path
           required: true
-          schema: { type: string, format: uuid }
-        - name: X-Internal-Key
-          in: header
-          required: true
-          schema: { type: string }
+          schema:
+            type: string
+            pattern: '^[0-9A-HJKMNP-TV-Z]{12}$'
       responses:
-        '200': { description: Total de participaciones, sin identidades ni contenido de votos }
-        '401': { description: Clave interna inválida }
+        '200':
+          description: Comprobante auténtico
+        '400':
+          description: Formato de comprobante inválido
+        '404':
+          description: Comprobante no encontrado
+
+  /internal/votacion/elecciones/{id}/total-participacion:
+    get:
+      summary: Consultar el total agregado de participaciones
+      parameters:
+        - $ref: '#/components/parameters/EleccionId'
+        - $ref: '#/components/parameters/InternalKey'
+      responses:
+        '200':
+          description: Total de participaciones sin identidades ni contenido de votos
+        '401':
+          description: Clave interna inválida
+
+  /internal/votacion/elecciones/{id}/conteo:
+    get:
+      summary: Consultar el conteo de votos de una elección cerrada
+      parameters:
+        - $ref: '#/components/parameters/EleccionId'
+        - $ref: '#/components/parameters/InternalKey'
+      responses:
+        '200':
+          description: Conteo agregado por candidatura y votos en blanco
+        '401':
+          description: Clave interna inválida
+        '422':
+          description: La elección todavía no está cerrada
+        '503':
+          description: No se pudo consultar el servicio de elecciones
+
+  /internal/votacion/elecciones/{id}/participacion:
+    get:
+      summary: Consultar participación agregada por facultad y carrera
+      parameters:
+        - $ref: '#/components/parameters/EleccionId'
+        - $ref: '#/components/parameters/InternalKey'
+      responses:
+        '200':
+          description: Participación agregada
+        '401':
+          description: Clave interna inválida
+        '422':
+          description: La elección todavía no está cerrada
+
+  /internal/votacion/participaciones/consultar:
+    post:
+      summary: Consultar en qué elecciones participó un estudiante (uso interno)
+      parameters:
+        - $ref: '#/components/parameters/InternalKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [usuarioId, eleccionIds]
+              properties:
+                usuarioId:
+                  type: string
+                  format: uuid
+                eleccionIds:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
+                    format: uuid
+      responses:
+        '200':
+          description: Lista de elecciones en las que participó el estudiante
+        '400':
+          description: Datos inválidos
+        '401':
+          description: Clave interna inválida
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    EleccionId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    InternalKey:
+      name: X-Internal-Key
+      in: header
+      required: true
+      schema:
+        type: string
