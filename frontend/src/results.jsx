@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import Swal from 'sweetalert2';
 import { Shell, fmt, useAuth } from './common';
 
 export function ResultsList() {
@@ -48,6 +49,7 @@ export function ResultDetail({ admin = false }) {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [tieCandidateId, setTieCandidateId] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -95,6 +97,70 @@ export function ResultDetail({ admin = false }) {
     }
   }
 
+  async function verify() {
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/resultados/elecciones/${id}/verificar`, { method: 'POST', body: '{}' });
+      await load();
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resolveTie() {
+    const candidates = result?.candidaturas?.filter((candidate) => candidate.ganadora) || [];
+    const candidateId = tieCandidateId || candidates[0]?.candidaturaId;
+    if (!candidateId) {
+      setError('No hay candidaturas empatadas para seleccionar.');
+      return;
+    }
+    const decision = await Swal.fire({
+      title: 'Resolver empate',
+      text: 'La decisión quedará registrada con tu usuario y no se podrá cambiar.',
+      input: 'textarea',
+      inputLabel: 'Motivo del desempate',
+      inputPlaceholder: 'Describe el motivo (5 a 500 caracteres)',
+      inputAttributes: { 'aria-label': 'Motivo del desempate' },
+      inputValidator: (value) => {
+        const length = String(value || '').trim().length;
+        if (length < 5) return 'El motivo debe tener al menos 5 caracteres.';
+        if (length > 500) return 'El motivo no puede superar 500 caracteres.';
+        return undefined;
+      },
+      showCancelButton: true,
+      confirmButtonText: 'Registrar desempate',
+      cancelButtonText: 'Volver',
+      reverseButtons: true,
+      focusCancel: true,
+      buttonsStyling: false,
+      customClass: {
+        popup: 'confirm-dialog',
+        title: 'confirm-dialog-title',
+        htmlContainer: 'confirm-dialog-text',
+        actions: 'confirm-dialog-actions',
+        confirmButton: 'primary',
+        cancelButton: 'secondary',
+      },
+    });
+    if (!decision.isConfirmed) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/resultados/elecciones/${id}/desempatar`, {
+        method: 'POST',
+        body: JSON.stringify({ candidaturaId: candidateId, motivo: String(decision.value).trim() }),
+      });
+      await load();
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function exportCsv() {
     setBusy(true);
     setError('');
@@ -104,6 +170,26 @@ export function ResultDetail({ admin = false }) {
       const link = document.createElement('a');
       link.href = url;
       link.download = `escrutinio-${id}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (cause) {
+      setError(cause.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportPdf() {
+    setBusy(true);
+    setError('');
+    try {
+      const blob = await request(`/resultados/elecciones/${id}/acta.pdf`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `acta-${id}.pdf`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -142,6 +228,9 @@ export function ResultDetail({ admin = false }) {
             </div>
             <div className="panel">
               <h2>Resultados por candidatura</h2>
+              {result.tipoEleccion === 'REFERENDUM' && result.pregunta && (
+                <p className="ballot-question"><b>Pregunta:</b> {result.pregunta}</p>
+              )}
               {result.candidaturas.map((candidate) => (
                 <div className="result-row" key={candidate.candidaturaId}>
                   <div><b>{candidate.nombre}{candidate.ganadora ? ' · Ganadora' : ''}</b><span>{candidate.votos} votos · {candidate.porcentaje}%</span></div>
@@ -152,11 +241,42 @@ export function ResultDetail({ admin = false }) {
                 <div><b>Votos en blanco</b><span>{result.votosEnBlanco} votos{result.totalVotos ? ` · ${(result.votosEnBlanco * 100 / result.totalVotos).toFixed(2)}%` : ''}</span></div>
                 <div className="bar"><span style={{ width: `${result.totalVotos ? Math.min(100, result.votosEnBlanco * 100 / result.totalVotos) : 0}%` }} /></div>
               </div>
-              {result.empate && <p className="role-pill">Resultado empatado</p>}
+              {result.empate && <p className="role-pill">
+                {result.empateResuelto ? 'Empate resuelto mediante decisión administrativa' : 'Resultado empatado'}
+              </p>}
               {!result.totalVotos && <p className="muted">No se registraron votos en esta elección.</p>}
             </div>
+            <section className="panel integrity-panel">
+              <h2>Integridad del escrutinio</h2>
+              <p>{result.verificado ? 'Huella SHA-256 verificada.' : 'La huella aún no ha sido verificada.'}</p>
+              <code>{result.hashCanonico || 'Huella no disponible'}</code>
+              {result.verificadoEn && <small className="muted">Verificado: {fmt(result.verificadoEn)}</small>}
+              {admin && result.generadoPor && <small className="muted">Generado por: {result.generadoPor}</small>}
+              {admin && result.verificadoPor && <small className="muted">Verificado por: {result.verificadoPor}</small>}
+              {result.desempateEn && <p className="muted">
+                Desempate: {fmt(result.desempateEn)} · {result.motivoDesempate}
+              </p>}
+            </section>
             {admin && (
               <>
+                {result.empate && !result.empateResuelto && (
+                  <section className="panel section-panel">
+                    <h2>Desempate requerido</h2>
+                    <p className="muted">Selecciona una candidatura empatada y registra el motivo. La decisión se guardará de forma atómica en Elecciones.</p>
+                    <label>Candidatura
+                      <select value={tieCandidateId || result.candidaturas.find((candidate) => candidate.ganadora)?.candidaturaId || ''}
+                        onChange={(event) => setTieCandidateId(event.target.value)}>
+                        {result.candidaturas.filter((candidate) => candidate.ganadora).map((candidate) => (
+                          <option key={candidate.candidaturaId} value={candidate.candidaturaId}>{candidate.nombre}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button className="secondary" disabled={busy || !result.verificado} onClick={resolveTie}>
+                      Registrar desempate
+                    </button>
+                    {!result.verificado && <p className="muted">Verifica el escrutinio antes de resolver el empate.</p>}
+                  </section>
+                )}
                 <section className="panel section-panel">
                   <h2>Participación por facultad y carrera</h2>
                   {(result.participacionPorGrupo || []).length === 0 ? <p className="muted">No hay grupos habilitados para mostrar.</p> : (
@@ -170,8 +290,13 @@ export function ResultDetail({ admin = false }) {
                   )}
                 </section>
                 <div className="action-row">
-                  {result.estado !== 'PUBLICADO' && <button className="primary" disabled={busy} onClick={publish}>Publicar resultados</button>}
+                  {!result.verificado && <button className="secondary" disabled={busy} onClick={verify}>Verificar huella</button>}
+                  {result.estado !== 'PUBLICADO' && <button className="primary" disabled={busy
+                    || !result.verificado || (result.empate && !result.empateResuelto)} onClick={publish}>Publicar resultados</button>}
                   <button className="secondary" disabled={busy} onClick={exportCsv}>Exportar CSV</button>
+                  {result.estado === 'PUBLICADO' && result.verificado && (
+                    <button className="secondary" disabled={busy} onClick={exportPdf}>Descargar acta PDF</button>
+                  )}
                 </div>
               </>
             )}

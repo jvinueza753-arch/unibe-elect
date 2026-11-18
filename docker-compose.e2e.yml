@@ -15,11 +15,8 @@ services:
       E2E_TEST_DATABASE_PREFIX: unibe_test
       DATABASE_URL: postgresql://identidad:identidad_dev@postgres:5432/unibe_test_identidad?schema=public
       ALLOW_DEMO_SEED: "true"
-      DEMO_ADMIN_PASSWORD: ${E2E_DEMO_ADMIN_PASSWORD:-E2E-Admin-Password-2026!}
-      DEMO_STUDENT_PASSWORD: ${E2E_DEMO_STUDENT_PASSWORD:-E2E-Student-Password-2026!}
-    ports: !override
-      - "4101:4001"
-
+      DEMO_ADMIN_PASSWORD: ${E2E_DEMO_ADMIN_PASSWORD:-E2E-Ops-Account-2026!}
+      DEMO_STUDENT_PASSWORD: ${E2E_DEMO_STUDENT_PASSWORD:-E2E-Student-Account-2026!}
   elecciones:
     environment:
       NODE_ENV: test
@@ -61,8 +58,8 @@ services:
 
 volumes:
   postgres_e2e_data:
-    name: unibe-elect-e2e-postgres-data
+    name: ${E2E_VOLUME_PREFIX:-unibe-elect-e2e}-postgres-data
   jwt_private:
-    name: unibe-elect-e2e-jwt-private
+    name: ${E2E_VOLUME_PREFIX:-unibe-elect-e2e}-jwt-private
   jwt_public:
-    name: unibe-elect-e2e-jwt-public
+    name: ${E2E_VOLUME_PREFIX:-unibe-elect-e2e}-jwt-public

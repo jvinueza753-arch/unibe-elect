@@ -40,6 +40,19 @@ app.get("/health", async (_req, res) => {
 });
 const limite = (name, fallback) =>
   Math.max(1, Number(process.env[name]) || fallback);
+const respuestaLimite = (codigo, mensaje, windowMs) => (req, res) => {
+  const resetTime = req.rateLimit?.resetTime;
+  const expiresAt = resetTime instanceof Date ? resetTime.getTime() : Date.now() + windowMs;
+  const reintentarEnSegundos = Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000));
+  res.setHeader("Retry-After", String(reintentarEnSegundos));
+  return res.status(429).json({
+    error: {
+      codigo,
+      mensaje,
+      detalles: { reintentarEnSegundos },
+    },
+  });
+};
 app.use(
   rateLimit({
     windowMs: 60000,
@@ -47,6 +60,11 @@ app.use(
     standardHeaders: true,
     legacyHeaders: false,
     skip: (req) => req.path === "/health",
+    handler: respuestaLimite(
+      "DEMASIADAS_PETICIONES",
+      "Demasiadas peticiones. Intenta de nuevo más tarde.",
+      60000,
+    ),
   }),
 );
 app.use(
@@ -56,13 +74,27 @@ app.use(
     limit: limite("LIMITE_LOGIN", 20),
     standardHeaders: true,
     legacyHeaders: false,
+    handler: respuestaLimite(
+      "DEMASIADOS_INTENTOS",
+      "Demasiados intentos fallidos. Por seguridad, intenta de nuevo más tarde.",
+      15 * 60 * 1000,
+    ),
   }),
 );
 app.use(
   "/api/v1/auth/solicitudes-recuperacion",
   rateLimit({
     windowMs: 60 * 60 * 1000,
-    limit: limite("LIMITE_RECUPERACION", 60),
+    limit: limite("LIMITE_RECUPERACION", 10),
+    standardHeaders: true,
+    legacyHeaders: false,
+  }),
+);
+app.use(
+  "/api/v1/auth/restablecer-contrasena",
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: limite("LIMITE_RESTABLECER", 20),
     standardHeaders: true,
     legacyHeaders: false,
   }),

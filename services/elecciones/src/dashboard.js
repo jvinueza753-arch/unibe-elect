@@ -1,15 +1,7 @@
 const { llamarInterno } = require('/shared/interno');
 const { autenticar, requerirRol } = require('/shared/auth');
 const { error } = require('/shared/http');
-
-const estado = (eleccion) => {
-  if (eleccion.estadoGuardado === 'BORRADOR') return 'BORRADOR';
-  if (eleccion.estadoGuardado === 'CANCELADA') return 'CANCELADA';
-  const ahora = Date.now();
-  if (ahora < new Date(eleccion.fechaApertura).getTime()) return 'PROGRAMADA';
-  if (ahora < new Date(eleccion.fechaCierre).getTime()) return 'ABIERTA';
-  return 'CERRADA';
-};
+const { estado } = require('./estado');
 
 const esElegible = (eleccion, usuario) =>
   (!eleccion.facultadesPermitidas.length ||

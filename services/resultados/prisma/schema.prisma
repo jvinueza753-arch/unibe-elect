@@ -20,6 +20,21 @@ model Escrutinio {
  totalHabilitados Int
  participacion Decimal @db.Decimal(5,2)
  empate Boolean @default(false)
+ empateResuelto Boolean @default(false)
+ tipoEleccion String?
+ pregunta String?
+ snapshotJson Json? @db.JsonB
+ hashCanonico String?
+ hashPreDesempate String?
+ hashVerificado String?
+ generadoPor String? @db.Uuid
+ publicadoPor String? @db.Uuid
+ verificadoPor String? @db.Uuid
+ verificadoEn DateTime?
+ candidaturaDesempateId String? @db.Uuid
+ desempatePor String? @db.Uuid
+ desempateEn DateTime?
+ motivoDesempate String?
  generadoEn DateTime @default(now())
  publicadoEn DateTime?
  candidaturas EscrutinioCandidatura[]
@@ -34,6 +49,7 @@ model EscrutinioCandidatura {
  votos Int
  porcentaje Decimal @db.Decimal(5,2)
  ganadora Boolean @default(false)
+ orden Int @default(0)
  escrutinio Escrutinio @relation(fields: [escrutinioId], references: [id], onDelete: Cascade)
  @@map("escrutinios_candidaturas")
 }

@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: UNIBE Elect - resultados
   version: 1.0.0
-  description: API del microservicio resultados.
+  description: API de escrutinio, integridad, desempate y publicación.
 servers:
   - url: http://localhost:4004
 paths:
@@ -12,3 +12,117 @@ paths:
       responses:
         '200': { description: Servicio disponible }
         '503': { description: Base de datos no disponible }
+  /api/v1/resultados:
+    get:
+      summary: Listar resultados visibles para el usuario
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200': { description: Los resultados no publicados solo son visibles para administradores }
+  /api/v1/resultados/elecciones/{id}:
+    get:
+      summary: Consultar resultado, huella y estado de verificación
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '200': { description: Resultado publicado o detalle administrativo }
+        '404': { description: Resultado no encontrado o no publicado para estudiantes }
+  /api/v1/resultados/elecciones/{id}/escrutinio:
+    post:
+      summary: Generar el escrutinio y su snapshot canónico
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '201': { description: Escrutinio generado con huella SHA-256 }
+        '200': { description: Escrutinio ya generado (operación idempotente) }
+        '422': { description: Elección no cerrada }
+  /api/v1/resultados/elecciones/{id}/verificar:
+    post:
+      summary: Recalcular y registrar la verificación de integridad
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '200': { description: Snapshot y hash coinciden; devuelve verificado y verificadoEn }
+        '404': { description: Escrutinio no encontrado }
+        '422': { description: La huella no coincide con el snapshot }
+  /api/v1/resultados/elecciones/{id}/desempatar:
+    post:
+      summary: Registrar la candidatura ganadora de un empate
+      description: Requiere escrutinio generado, huella verificada, candidatura empatada y motivo. Tras resolver el empate, se debe verificar de nuevo la huella antes de publicar.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [candidaturaId, motivo]
+              properties:
+                candidaturaId: { type: string, format: uuid }
+                motivo: { type: string, minLength: 5, maxLength: 500 }
+      responses:
+        '200': { description: Desempate registrado y aplicado }
+        '409': { description: Ya existe una decisión de desempate diferente }
+        '422': { description: Escrutinio sin empate, sin verificar o candidatura no empatada }
+  /api/v1/resultados/elecciones/{id}/publicar:
+    post:
+      summary: Publicar resultados con integridad verificada
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '200': { description: Resultados publicados }
+        '422': { description: Escrutinio no generado/verificado o empate pendiente }
+  /api/v1/resultados/elecciones/{id}/participacion:
+    get:
+      summary: Consultar participación agregada del escrutinio
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '200': { description: Totales generales y por grupo }
+        '404': { description: Escrutinio no encontrado }
+  /api/v1/resultados/elecciones/{id}/exportar:
+    get:
+      summary: Descargar resultados en CSV
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '200':
+          description: Archivo CSV UTF-8
+          content:
+            text/csv:
+              schema: { type: string, format: binary }
+        '404': { description: Escrutinio no encontrado }
+  /api/v1/resultados/elecciones/{id}/acta.pdf:
+    get:
+      summary: Descargar el acta oficial en PDF
+      description: Solo disponible cuando los resultados están publicados y su huella está verificada.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: '#/components/parameters/eleccionId'
+      responses:
+        '200':
+          description: Acta PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        '404': { description: Escrutinio no encontrado }
+        '422': { description: El acta requiere resultados publicados y verificados }
+components:
+  parameters:
+    eleccionId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

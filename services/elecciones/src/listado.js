@@ -1,3 +1,5 @@
+const { whereEstado } = require('./estado');
+
 const ESTADOS = ['BORRADOR', 'PROGRAMADA', 'ABIERTA', 'CERRADA', 'CANCELADA'];
 
 function parsePagination(pagina, limite) {
@@ -5,27 +7,6 @@ function parsePagination(pagina, limite) {
     pagina: Math.max(1, Math.trunc(Number(pagina) || 1)),
     limite: Math.min(100, Math.max(1, Math.trunc(Number(limite) || 20))),
   };
-}
-
-function whereEstado(estado, now) {
-  switch (estado) {
-    case 'BORRADOR':
-      return { estadoGuardado: 'BORRADOR' };
-    case 'CANCELADA':
-      return { estadoGuardado: 'CANCELADA' };
-    case 'PROGRAMADA':
-      return { estadoGuardado: 'PUBLICADA', fechaApertura: { gt: now } };
-    case 'ABIERTA':
-      return {
-        estadoGuardado: 'PUBLICADA',
-        fechaApertura: { lte: now },
-        fechaCierre: { gt: now },
-      };
-    case 'CERRADA':
-      return { estadoGuardado: 'PUBLICADA', fechaCierre: { lte: now } };
-    default:
-      return null;
-  }
 }
 
 function buildElectionWhere(rol, estado, now) {
@@ -64,4 +45,4 @@ async function listarElecciones(db, { rol, estado, pagina, limite, now = new Dat
   };
 }
 
-module.exports = { ESTADOS, buildElectionWhere, listarElecciones, parsePagination };
+module.exports = { ESTADOS, buildElectionWhere, listarElecciones, parsePagination, whereEstado };

@@ -1,5 +1,6 @@
 const db = require('./db');
 const bcrypt = require('bcryptjs');
+const { validarPoliticaContrasena } = require('./password-validation');
 
 async function seedDemoData() {
   if (process.env.NODE_ENV === 'production') {
@@ -40,6 +41,10 @@ async function seedDemoData() {
   ];
 
   for (const user of users) {
+    const violations = validarPoliticaContrasena(user.contrasena, user);
+    if (violations.length) {
+      throw new Error(`Una contraseña de demostración no cumple la política: ${violations.join(', ')}`);
+    }
     const { contrasena, ...data } = user;
     await db.usuario.upsert({
       where: { correo: user.correo },

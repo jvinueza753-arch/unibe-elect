@@ -39,7 +39,8 @@ export function AuthProvider({ children }) {
     const response = await fetch(`${API}${path}`, { ...options, headers });
     let payload = null;
     if (response.status !== 204) {
-      if ((response.headers.get('content-type') || '').includes('text/csv')) {
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('text/csv') || contentType.includes('application/pdf')) {
         payload = await response.blob();
       } else {
         const text = await response.text();
@@ -62,6 +63,11 @@ export function AuthProvider({ children }) {
       const error = new Error(payload?.error?.mensaje || `No se pudo completar la solicitud (${response.status}).`);
       error.status = response.status;
       error.code = payload?.error?.codigo;
+      error.details = payload?.error?.detalles;
+      const retryAfter = response.headers.get('retry-after');
+      error.retryAfter = retryAfter && Number.isFinite(Number(retryAfter))
+        ? Number(retryAfter)
+        : null;
       throw error;
     }
     return payload;

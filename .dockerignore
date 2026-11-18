@@ -1,0 +1,17 @@
+**/node_modules
+**/generated
+**/generated-js
+**/dist
+**/coverage
+**/.vite
+.git
+.env
+.env.*
+!.env.example
+keys
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer

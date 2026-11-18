@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: API del microservicio identidad.
 servers:
-  - url: http://localhost:4001
+  - url: http://localhost:3000
 paths:
   /health:
     get:
@@ -12,10 +12,130 @@ paths:
       responses:
         '200': { description: Servicio disponible }
         '503': { description: Base de datos no disponible }
+  /api/v1/auth/politica-contrasena:
+    get:
+      summary: Consultar los requisitos públicos de contraseña
+      responses:
+        '200':
+          description: Política sin revelar la lista de contraseñas comunes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    required: [minimo, maximoBytes, reglas]
+                    properties:
+                      minimo: { type: integer, example: 10 }
+                      maximoBytes: { type: integer, example: 72 }
+                      reglas:
+                        type: array
+                        items:
+                          type: object
+                          required: [codigo, descripcion]
+                          properties:
+                            codigo: { type: string }
+                            descripcion: { type: string }
+  /api/v1/auth/login:
+    post:
+      summary: Iniciar sesión con bloqueo temporal por fallos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [correo, contrasena]
+              properties:
+                correo: { type: string, format: email }
+                contrasena: { type: string }
+      responses:
+        '200': { description: Sesión creada }
+        '401':
+          description: Credenciales inválidas; no revela si la cuenta existe
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      codigo: { type: string, example: CREDENCIALES_INVALIDAS }
+                      detalles:
+                        type: object
+                        properties:
+                          intentosRestantes: { type: integer, minimum: 0 }
+        '429':
+          description: Cuenta bloqueada temporalmente; incluye cabecera Retry-After
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: object
+                    properties:
+                      codigo: { type: string, example: DEMASIADOS_INTENTOS }
+                      detalles:
+                        type: object
+                        properties:
+                          reintentarEnSegundos: { type: integer }
+                          bloqueadoHasta: { type: string, format: date-time }
+                          intentosMaximos: { type: integer, example: 5 }
+  /api/v1/auth/registro:
+    post:
+      summary: Registrar una cuenta estudiantil
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [nombres, apellidos, correo, contrasena, codigoEstudiantil, facultad, carrera]
+              properties:
+                nombres: { type: string }
+                apellidos: { type: string }
+                correo: { type: string, format: email }
+                contrasena: { type: string, minLength: 10, maxLength: 128, description: Máximo 72 bytes UTF-8; debe cumplir la política de contraseña }
+                codigoEstudiantil: { type: string }
+                facultad: { type: string }
+                carrera: { type: string }
+      responses:
+        '201': { description: Cuenta creada }
+        '400': { description: Datos inválidos o contraseña que incumple la política }
+        '409': { description: Correo o código estudiantil duplicado }
+  /api/v1/auth/cambiar-contrasena:
+    post:
+      summary: Cambiar la contraseña de la sesión autenticada
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [contrasenaActual, contrasenaNueva]
+              properties:
+                contrasenaActual: { type: string }
+                contrasenaNueva: { type: string, minLength: 10, maxLength: 128, description: Máximo 72 bytes UTF-8 y política vigente }
+      responses:
+        '204': { description: Contraseña actualizada; sesiones anteriores revocadas }
+        '400': { description: Contraseña nueva inválida; detalles.contrasena contiene códigos de regla }
+        '401': { description: Contraseña actual incorrecta o sesión inválida }
   /api/v1/auth/solicitudes-recuperacion:
     post:
       summary: Solicitar recuperación de contraseña
-      description: Siempre responde con un mensaje genérico para no revelar si existe la cuenta.
+      description: >
+        Siempre responde con un mensaje genérico. Una solicitud pendiente existente
+        se refresca; una aprobada y vigente de una versión anterior permanece abierta
+        para que el administrador pueda reemitir el código. Una solicitud completada
+        por la asignación de contraseña temporal no impide crear otra solicitud.
+        Los límites de frecuencia son por IP en el gateway.
       requestBody:
         required: true
         content:
@@ -31,7 +151,8 @@ paths:
         '429': { description: Límite de solicitudes alcanzado }
   /api/v1/auth/restablecer-contrasena:
     post:
-      summary: Establecer contraseña con código aprobado
+      summary: Establecer contraseña con código heredado aprobado
+      description: Compatibilidad con solicitudes aprobadas antes de la asignación de contraseñas temporales.
       requestBody:
         required: true
         content:
@@ -40,22 +161,59 @@ paths:
               type: object
               required: [codigo, contrasenaNueva]
               properties:
-                codigo: { type: string, minLength: 32 }
-                contrasenaNueva: { type: string, minLength: 8, maxLength: 128 }
+                codigo: { type: string, minLength: 32, maxLength: 200 }
+                contrasenaNueva:
+                  type: string
+                  minLength: 10
+                  maxLength: 128
+                  description: Debe ocupar como máximo 72 bytes UTF-8, cumplir la política y ser distinta de la actual.
       responses:
-        '204': { description: Contraseña actualizada; código consumido }
-        '400': { description: Datos o código inválidos }
+        '204': { description: Contraseña actualizada; código consumido, otras solicitudes abiertas invalidadas y sesiones anteriores revocadas }
+        '400': { description: Datos/código inválidos, código vencido o contraseña actual reutilizada }
   /api/v1/admin/solicitudes-recuperacion:
     get:
-      summary: Listar solicitudes de recuperación
+      summary: Listar solicitudes de recuperación con filtros y paginación
       security: [{ bearerAuth: [] }]
+      parameters:
+        - name: pagina
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+        - name: limite
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+        - name: estado
+          in: query
+          schema: { type: string, enum: [PENDIENTE, APROBADA, RECHAZADA, COMPLETADA, EXPIRADA] }
+        - name: busqueda
+          in: query
+          description: Busca por correo o código estudiantil.
+          schema: { type: string, maxLength: 254 }
       responses:
-        '200': { description: Solicitudes recientes con datos básicos del estudiante }
+        '200':
+          description: Solicitudes paginadas; las pendientes aparecen primero cuando no se filtra estado.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      items: { type: array, items: { type: object } }
+                      meta:
+                        type: object
+                        properties:
+                          pagina: { type: integer }
+                          limite: { type: integer }
+                          total: { type: integer }
+                          totalPaginas: { type: integer }
+                          pendientes: { type: integer }
+        '400': { description: Filtros o paginación inválidos }
         '403': { description: Se requiere rol administrador }
   /api/v1/admin/solicitudes-recuperacion/{id}/aprobar:
     post:
-      summary: Aprobar solicitud y generar código de un solo uso
-      description: El código solo se devuelve en esta respuesta y vence en una hora.
+      summary: Aprobar solicitud y asignar contraseña temporal aleatoria
+      description: La contraseña se actualiza al aprobar y solo se devuelve en esta respuesta para entrega segura.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -63,9 +221,23 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '200': { description: Solicitud aprobada; entregar el código al estudiante por un canal seguro }
+        '200': { description: Solicitud completada; registra administrador y fecha. La contraseña temporal se muestra una sola vez y debe entregarse por canal seguro. }
         '404': { description: Solicitud no pendiente }
         '409': { description: El estudiante ya tiene una recuperación activa }
+  /api/v1/admin/solicitudes-recuperacion/{id}/reemitir:
+    post:
+      summary: Reemitir código heredado de una solicitud aprobada vigente
+      description: Genera un código nuevo y reemplaza el hash anterior atómicamente. El código previo queda invalidado inmediatamente.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Código nuevo mostrado una sola vez; vence en una hora }
+        '409': { description: La solicitud no está aprobada/vigente o cambió simultáneamente }
+        '422': { description: Solo estudiantes activos son elegibles }
   /api/v1/admin/solicitudes-recuperacion/{id}/rechazar:
     post:
       summary: Rechazar solicitud pendiente
@@ -78,9 +250,31 @@ paths:
       responses:
         '204': { description: Solicitud rechazada }
         '404': { description: Solicitud no pendiente }
+  /internal/auth/sesion-valida:
+    post:
+      summary: Validar versión de sesión firmada en un JWT
+      description: Endpoint interno; exige la clave de servicio y no se enruta desde el gateway público.
+      security: [{ internalServiceKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sub, sv]
+              properties:
+                sub: { type: string, format: uuid }
+                sv: { type: integer, minimum: 0 }
+      responses:
+        '204': { description: Sesión activa }
+        '401': { description: Sesión revocada o inválida }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    internalServiceKey:
+      type: apiKey
+      in: header
+      name: X-Internal-Key

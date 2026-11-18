@@ -1,9 +1,16 @@
 async function obtenerIntentos(db, clave, ahora) {
-  const limite = await db.limiteIntento.findUnique({ where: { clave } });
-  return limite && limite.expiraEn > new Date(ahora) ? limite.intentos : 0;
+  return (await obtenerEstadoIntentos(db, clave, ahora)).intentos;
 }
 
-async function incrementarIntentos(db, clave, ahora, ventanaMs, maxIntentos) {
+async function obtenerEstadoIntentos(db, clave, ahora) {
+  const limite = await db.limiteIntento.findUnique({ where: { clave } });
+  if (!limite || limite.expiraEn <= new Date(ahora)) {
+    return { intentos: 0, expiraEn: null };
+  }
+  return { intentos: limite.intentos, expiraEn: limite.expiraEn };
+}
+
+async function incrementarIntentosConExpiracion(db, clave, ahora, ventanaMs, maxIntentos) {
   const ahoraFecha = new Date(ahora);
   const nuevaExpiracion = new Date(ahora + ventanaMs);
   const filas = await db.$queryRaw`
@@ -18,9 +25,16 @@ async function incrementarIntentos(db, clave, ahora, ventanaMs, maxIntentos) {
         WHEN "limites_intentos"."expiraEn" <= ${ahoraFecha} THEN ${nuevaExpiracion}
         ELSE "limites_intentos"."expiraEn"
       END
-    RETURNING "intentos"
+    RETURNING "intentos", "expiraEn"
   `;
-  return Number(filas[0]?.intentos || maxIntentos + 1);
+  return {
+    intentos: Number(filas[0]?.intentos || maxIntentos + 1),
+    expiraEn: filas[0]?.expiraEn ? new Date(filas[0].expiraEn) : nuevaExpiracion,
+  };
+}
+
+async function incrementarIntentos(db, clave, ahora, ventanaMs, maxIntentos) {
+  return (await incrementarIntentosConExpiracion(db, clave, ahora, ventanaMs, maxIntentos)).intentos;
 }
 
 async function reiniciarIntentos(db, clave) {
@@ -33,7 +47,9 @@ async function limpiarIntentosExpirados(db, ahora) {
 
 module.exports = {
   incrementarIntentos,
+  incrementarIntentosConExpiracion,
   limpiarIntentosExpirados,
   obtenerIntentos,
+  obtenerEstadoIntentos,
   reiniciarIntentos,
 };

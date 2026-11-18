@@ -11,20 +11,39 @@ enum EstadoGuardado {
   PUBLICADA
   CANCELADA
 }
+enum TipoEleccion {
+  CANDIDATURAS
+  REFERENDUM
+  PLANCHAS
+}
 model Eleccion {
  id String @id @default(uuid()) @db.Uuid
  titulo String
  descripcion String?
  fechaApertura DateTime
  fechaCierre DateTime
+ cerradaEn DateTime?
+ cerradaPor String? @db.Uuid
+ cerradaPorCorreo String?
+ motivoCierre String?
+ candidaturaDesempateId String? @db.Uuid
+ desempatePor String? @db.Uuid
+ desempateEn DateTime?
+ motivoDesempate String?
+ hashEscrutinioDesempate String?
+ tipo TipoEleccion @default(CANDIDATURAS)
+ pregunta String?
+ ordenAleatorio Boolean @default(true)
  candidaturasRequeridas Int @default(2)
  facultadesPermitidas String[] @default([])
  carrerasPermitidas String[] @default([])
+ cargosRequeridos String[] @default(["PRESIDENTE", "VICEPRESIDENTE"])
  estadoGuardado EstadoGuardado @default(BORRADOR)
  creadaPor String @db.Uuid
  creadoEn DateTime @default(now())
  actualizadoEn DateTime @updatedAt
  candidaturas Candidatura[]
+ @@index([tipo, estadoGuardado])
  @@map("elecciones")
 }
 model Candidatura {
@@ -33,8 +52,33 @@ model Candidatura {
  nombre String
  descripcion String?
  fotoUrl String?
+ lema String?
+ propuestas String[] @default([])
+ codigoOpcion String?
  orden Int @default(0)
  eleccion Eleccion @relation(fields: [eleccionId], references: [id], onDelete: Cascade)
+ integrantes IntegrantePlancha[]
+ imagen ImagenCandidatura?
  @@index([eleccionId, orden])
  @@map("candidaturas")
+}
+model IntegrantePlancha {
+ id String @id @default(uuid()) @db.Uuid
+ candidaturaId String @db.Uuid
+ cargo String
+ nombre String
+ orden Int @default(0)
+ candidatura Candidatura @relation(fields: [candidaturaId], references: [id], onDelete: Cascade)
+ @@index([candidaturaId, cargo, orden])
+ @@map("integrantes_plancha")
+}
+model ImagenCandidatura {
+ id String @id @default(uuid()) @db.Uuid
+ candidaturaId String @unique @db.Uuid
+ tipoContenido String
+ tamano Int
+ datos Bytes
+ creadoEn DateTime @default(now())
+ candidatura Candidatura @relation(fields: [candidaturaId], references: [id], onDelete: Cascade)
+ @@map("imagenes_candidatura")
 }
