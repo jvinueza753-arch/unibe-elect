@@ -35,7 +35,11 @@ export function RequestPasswordReset() {
       <span className="eyebrow">RECUPERACIÓN DE CUENTA</span>
       <h1>Solicitar cambio de contraseña</h1>
       <p className="muted">
-        Un administrador revisará tu solicitud. Si se aprueba, te entregará un código de un solo uso.
+        Envía tu solicitud para que un administrador la revise. Si la aprueba, te entregará una contraseña temporal por un canal seguro. Inicia sesión con ella y cámbiala desde tu perfil.
+      </p>
+      <p className="muted">
+        ¿Tienes un código de recuperación de una solicitud anterior?{' '}
+        <Link to="/restablecer-contrasena" className="link">Ingresarlo aquí</Link>.
       </p>
       <form className="panel" onSubmit={submit}>
         <label>Correo de tu cuenta
@@ -139,16 +143,16 @@ export function ResetPassword() {
 
 const statusLabel = {
   PENDIENTE: 'Pendiente',
-  APROBADA: 'Aprobada · código emitido',
+  APROBADA: 'Aprobada · código pendiente',
   RECHAZADA: 'Rechazada',
-  COMPLETADA: 'Completada',
-  EXPIRADA: 'Código vencido',
+  COMPLETADA: 'Contraseña restablecida',
+  EXPIRADA: 'Expirada',
 };
 const statusDescription = {
   PENDIENTE: 'Espera revisión del administrador. Volver a solicitar refresca la prioridad y la fecha.',
-  APROBADA: 'El código es de un solo uso y vence en una hora. Si se perdió, se puede reemitir mientras siga vigente.',
+  APROBADA: 'Esta solicitud conserva un código de una versión anterior. Si sigue vigente, puede reemitirse.',
   RECHAZADA: 'La solicitud fue rechazada; el estudiante puede volver a solicitar recuperación.',
-  COMPLETADA: 'La contraseña se restableció y el código ya no se puede utilizar.',
+  COMPLETADA: 'Se asignó una contraseña temporal; el estudiante puede iniciar sesión y cambiarla. Puede volver a solicitar recuperación.',
   EXPIRADA: 'La solicitud o el código venció; el estudiante puede iniciar una nueva solicitud.',
 };
 
@@ -163,8 +167,8 @@ export function AdminPasswordResetRequests() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
-  const [issuedCode, setIssuedCode] = useState(null);
-  const issuedCodeRef = useRef(null);
+  const [issuedCredential, setIssuedCredential] = useState(null);
+  const issuedCredentialRef = useRef(null);
 
   const load = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setLoading(true);
@@ -198,21 +202,21 @@ export function AdminPasswordResetRequests() {
   }, [textoBusqueda]);
 
   useEffect(() => {
-    if (issuedCode) issuedCodeRef.current?.focus();
-  }, [issuedCode]);
+    if (issuedCredential) issuedCredentialRef.current?.focus();
+  }, [issuedCredential]);
 
   async function approve(id) {
-    if (!await confirmAction('¿Aprobar la solicitud?', 'Se generará un código de un solo uso para el estudiante.')) return;
+    if (!await confirmAction('¿Aprobar la solicitud?', 'Se asignará una contraseña temporal aleatoria al estudiante.')) return;
     setBusyId(id);
     setError('');
-    setIssuedCode(null);
+    setIssuedCredential(null);
     try {
       const result = await api(`/admin/solicitudes-recuperacion/${id}/aprobar`, {
         method: 'POST',
         body: '{}',
       });
-      setIssuedCode(result);
-      toast.success('Solicitud aprobada. Copia el código y entrégalo al estudiante por un canal seguro.');
+      setIssuedCredential(result);
+      toast.success('Solicitud aprobada. Copia la contraseña temporal y entrégala por un canal seguro.');
       await load();
     } catch (cause) {
       setError(cause.message);
@@ -228,13 +232,13 @@ export function AdminPasswordResetRequests() {
     )) return;
     setBusyId(request.id);
     setError('');
-    setIssuedCode(null);
+    setIssuedCredential(null);
     try {
       const result = await api(`/admin/solicitudes-recuperacion/${request.id}/reemitir`, {
         method: 'POST',
         body: '{}',
       });
-      setIssuedCode(result);
+      setIssuedCredential(result);
       toast.success('Código reemitido. El código anterior quedó invalidado.');
       await load();
     } catch (cause) {
@@ -257,7 +261,7 @@ export function AdminPasswordResetRequests() {
         method: 'POST',
         body: '{}',
       });
-      setIssuedCode(null);
+      setIssuedCredential(null);
       toast.success('Solicitud rechazada.');
       await load();
     } catch (cause) {
@@ -267,12 +271,13 @@ export function AdminPasswordResetRequests() {
     }
   }
 
-  async function copyCode() {
+  async function copyCredential() {
     try {
-      await navigator.clipboard.writeText(issuedCode.codigo);
-      toast.success('Código copiado. Entrégalo al estudiante por un canal seguro.');
+      const value = issuedCredential.contrasenaTemporal || issuedCredential.codigo;
+      await navigator.clipboard.writeText(value);
+      toast.success(`${issuedCredential.contrasenaTemporal ? 'Contraseña temporal' : 'Código'} copiado. Entrégalo al estudiante por un canal seguro.`);
     } catch {
-      setError('No se pudo copiar automáticamente. Selecciona y copia el código manualmente.');
+      setError('No se pudo copiar automáticamente. Selecciona y copia el valor manualmente.');
     }
   }
 
@@ -288,7 +293,7 @@ export function AdminPasswordResetRequests() {
         </button>
       </div>
       <p className="muted">
-        Las pendientes aparecen primero. Los códigos se muestran una vez, vencen en una hora y solo deben entregarse por un canal seguro.
+        Las pendientes aparecen primero. Las contraseñas temporales se muestran una vez y deben entregarse por un canal seguro.
       </p>
       <div className="action-row" role="search" aria-label="Buscar solicitudes de recuperación">
         <label>
@@ -317,15 +322,22 @@ export function AdminPasswordResetRequests() {
         </span>
       </div>
       {error && <p className="error" role="alert">{error}</p>}
-      {issuedCode && (
+      {issuedCredential && (
         <div className="panel reset-code" role="status" aria-live="polite">
-          <b>Código de un solo uso para {issuedCode.correo}</b>
-          <p className="muted">{issuedCode.mensaje}</p>
+          <b>{issuedCredential.contrasenaTemporal ? 'Contraseña temporal' : 'Código de un solo uso'} para {issuedCredential.correo}</b>
+          <p className="muted">{issuedCredential.mensaje}</p>
           <div className="action-row">
-            <input ref={issuedCodeRef} aria-label="Código de recuperación" readOnly value={issuedCode.codigo} />
-            <button className="secondary" type="button" onClick={copyCode}>Copiar código</button>
+            <input
+              ref={issuedCredentialRef}
+              aria-label={issuedCredential.contrasenaTemporal ? 'Contraseña temporal' : 'Código de recuperación'}
+              readOnly
+              value={issuedCredential.contrasenaTemporal || issuedCredential.codigo}
+            />
+            <button className="secondary" type="button" onClick={copyCredential}>
+              {issuedCredential.contrasenaTemporal ? 'Copiar contraseña' : 'Copiar código'}
+            </button>
           </div>
-          <small>Vence: {new Date(issuedCode.codigoExpira).toLocaleString()}</small>
+          {issuedCredential.codigoExpira && <small>Vence: {new Date(issuedCredential.codigoExpira).toLocaleString()}</small>}
         </div>
       )}
       {loading ? <p role="status">Cargando solicitudes…</p> : items.length === 0 ? (
@@ -357,7 +369,7 @@ export function AdminPasswordResetRequests() {
                 <div className="action-row">
                   <button className="primary" type="button" disabled={busyId === request.id}
                     onClick={() => approve(request.id)}>
-                    {busyId === request.id ? 'Procesando…' : 'Aprobar y generar código'}
+                    {busyId === request.id ? 'Procesando…' : 'Aprobar y generar contraseña temporal'}
                   </button>
                   <button className="secondary" type="button" disabled={busyId === request.id}
                     onClick={() => reject(request)}>

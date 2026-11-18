@@ -132,8 +132,10 @@ paths:
       summary: Solicitar recuperación de contraseña
       description: >
         Siempre responde con un mensaje genérico. Una solicitud pendiente existente
-        se refresca; una aprobada y vigente permanece abierta para que el administrador
-        pueda reemitir el código. Los límites de frecuencia son por IP en el gateway.
+        se refresca; una aprobada y vigente de una versión anterior permanece abierta
+        para que el administrador pueda reemitir el código. Una solicitud completada
+        por la asignación de contraseña temporal no impide crear otra solicitud.
+        Los límites de frecuencia son por IP en el gateway.
       requestBody:
         required: true
         content:
@@ -149,7 +151,8 @@ paths:
         '429': { description: Límite de solicitudes alcanzado }
   /api/v1/auth/restablecer-contrasena:
     post:
-      summary: Establecer contraseña con código aprobado
+      summary: Establecer contraseña con código heredado aprobado
+      description: Compatibilidad con solicitudes aprobadas antes de la asignación de contraseñas temporales.
       requestBody:
         required: true
         content:
@@ -209,8 +212,8 @@ paths:
         '403': { description: Se requiere rol administrador }
   /api/v1/admin/solicitudes-recuperacion/{id}/aprobar:
     post:
-      summary: Aprobar solicitud y generar código de un solo uso
-      description: El código solo se devuelve en esta respuesta y vence en una hora.
+      summary: Aprobar solicitud y asignar contraseña temporal aleatoria
+      description: La contraseña se actualiza al aprobar y solo se devuelve en esta respuesta para entrega segura.
       security: [{ bearerAuth: [] }]
       parameters:
         - name: id
@@ -218,12 +221,12 @@ paths:
           required: true
           schema: { type: string, format: uuid }
       responses:
-        '200': { description: Solicitud aprobada; registra administrador y fecha. Entregar el código por canal seguro. }
+        '200': { description: Solicitud completada; registra administrador y fecha. La contraseña temporal se muestra una sola vez y debe entregarse por canal seguro. }
         '404': { description: Solicitud no pendiente }
         '409': { description: El estudiante ya tiene una recuperación activa }
   /api/v1/admin/solicitudes-recuperacion/{id}/reemitir:
     post:
-      summary: Reemitir código de una solicitud aprobada vigente
+      summary: Reemitir código heredado de una solicitud aprobada vigente
       description: Genera un código nuevo y reemplaza el hash anterior atómicamente. El código previo queda invalidado inmediatamente.
       security: [{ bearerAuth: [] }]
       parameters:

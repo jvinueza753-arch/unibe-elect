@@ -4,8 +4,9 @@
 
 - Solo se crean solicitudes para estudiantes activos. Los mensajes y el estado HTTP no confirman si el correo existe; las solicitudes válidas tienen un tiempo mínimo de respuesta común.
 - Una solicitud pendiente no se duplica: una nueva petición refresca `solicitadaEn` y su prioridad. Las pendientes vencen después del valor de `RECUPERACION_PENDIENTE_TTL_HORAS` (72 horas por defecto).
-- Si existe una solicitud aprobada con código vigente, no se crea otra. El administrador puede reemitir desde el panel; la emisión reemplaza el hash anterior atómicamente y el código anterior deja de funcionar.
-- Los códigos tienen 256 bits aleatorios, solo se almacena SHA-256, vencen en una hora y se consumen una sola vez. No deben aparecer en logs.
+- Si existe una solicitud aprobada con código vigente de una versión anterior, no se crea otra. El administrador puede reemitir desde el panel; la emisión reemplaza el hash anterior atómicamente y el código anterior deja de funcionar.
+- Al aprobar una solicitud se genera una contraseña temporal aleatoria, se actualiza la credencial y se completa la solicitud en una transacción. La contraseña temporal se muestra una sola vez para entrega por canal seguro; el estudiante debe cambiarla después de iniciar sesión.
+- Los códigos de recuperación heredados tienen 256 bits aleatorios, solo se almacena SHA-256, vencen en una hora y se consumen una sola vez. No deben aparecer en logs.
 - El servicio realiza un barrido periódico y también al consultar/solicitar recuperación: marca pendientes y códigos vencidos como `EXPIRADA` y elimina estados terminales tras `RECUPERACION_RETENCION_DIAS` (90 días por defecto).
 
 ## Límites, contraseñas y sesiones
@@ -14,12 +15,13 @@
 - En `docker-compose.yml`, `LIMITE_GENERAL`, `LIMITE_LOGIN` y `LIMITE_VOTACION` conservan valores heredados de `100000`; no deben considerarse protección efectiva contra abuso. Se mantienen fuera de este cambio para no alterar tráfico ajeno a recuperación y requieren una revisión de capacidad y límites específica.
 - Las contraseñas aceptan 8–128 caracteres, pero como bcrypt solo utiliza 72 bytes se rechazan valores que excedan 72 bytes UTF-8. Registro, cambio y recuperación usan la misma regla. La contraseña actual no se puede reutilizar.
 - Los JWT contienen `sv` (versión de sesión). Todos los microservicios validan la versión vigente con Identidad; una indisponibilidad de Identidad falla cerrada con `503`. Un cambio o restablecimiento incrementa `sessionVersion`, invalida los JWT anteriores y limpia el bloqueo `login:<SHA-256 del correo normalizado>`.
-- El restablecimiento completa la solicitud, invalida otras solicitudes abiertas y actualiza la contraseña dentro de una transacción. En dos aprobaciones o consumos concurrentes, la escritura condicional permite un solo ganador; la otra petición recibe conflicto/código inválido.
+- La aprobación completa la solicitud, invalida otras solicitudes abiertas, actualiza la contraseña e incrementa `sessionVersion` dentro de una transacción. La solicitud queda en el historial y una petición posterior crea una nueva solicitud pendiente.
+- Los códigos heredados completan la solicitud, invalidan otras solicitudes abiertas y actualizan la contraseña dentro de una transacción. En dos aprobaciones o consumos concurrentes, la escritura condicional permite un solo ganador; la otra petición recibe conflicto/código inválido.
 - Una recuperación no modifica elecciones ni votos. Si la elección sigue abierta, el estudiante inicia sesión de nuevo y continúa sujeto a las reglas normales de elegibilidad y participación.
 
 ## Panel administrativo
 
-La lista usa paginación explícita de 20 elementos (máximo API 100), filtro por estado y búsqueda por correo/código estudiantil. Las pendientes se muestran primero y el contador se actualiza mediante sondeo cada 30 segundos. Las fechas se muestran en la zona horaria del navegador. La aprobación, el rechazo y la última reemisión registran actor y fecha. El código nuevo solo se devuelve en la respuesta de aprobación/reemisión y debe entregarse por un canal seguro.
+La lista usa paginación explícita de 20 elementos (máximo API 100), filtro por estado y búsqueda por correo/código estudiantil. Las pendientes se muestran primero y el contador se actualiza mediante sondeo cada 30 segundos. Las fechas se muestran en la zona horaria del navegador. La aprobación, el rechazo y la última reemisión registran actor y fecha. La contraseña temporal solo se devuelve en la respuesta de aprobación; los códigos heredados solo se devuelven al reemitirlos. Ambos deben entregarse por un canal seguro.
 
 ## Recuperación administrativa y continuidad
 

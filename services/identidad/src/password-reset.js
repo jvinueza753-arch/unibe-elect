@@ -40,6 +40,17 @@ function digest(value) {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function generarContrasenaTemporal(usuario) {
+  let contrasena;
+  do {
+    contrasena = randomBytes(24).toString('base64url');
+  } while (validarPoliticaContrasena(contrasena, {
+    correo: usuario.correo,
+    codigoEstudiantil: usuario.codigoEstudiantil,
+  }).length);
+  return contrasena;
+}
+
 async function limpiarSolicitudesRecuperacion(db, ahora = new Date()) {
   const pendientesVencidasAntes = new Date(ahora.getTime() - PENDING_TTL_MS);
   const retenerDesde = new Date(ahora.getTime() - RETENTION_MS);
@@ -296,9 +307,8 @@ function registerPasswordResetRoutes(app, { db, error, autenticar, requerirRol }
       return error(res, 422, 'USUARIO_NO_ELEGIBLE', 'Solo se pueden aprobar solicitudes de estudiantes activos');
     }
 
-    const codigo = randomBytes(32).toString('base64url');
-    const codigoHash = digest(codigo);
-    const codigoExpira = new Date(ahora.getTime() + CODE_TTL_MS);
+    const contrasenaTemporal = generarContrasenaTemporal(solicitud.usuario);
+    const contrasenaHash = await bcrypt.hash(contrasenaTemporal, 12);
     try {
       const aprobada = await db.$transaction(async (tx) => {
         await tx.solicitudRecuperacion.updateMany({
@@ -309,21 +319,42 @@ function registerPasswordResetRoutes(app, { db, error, autenticar, requerirRol }
           },
           data: { estado: 'EXPIRADA', codigoHash: null, codigoExpira: null, resueltaEn: ahora },
         });
-        return tx.solicitudRecuperacion.updateMany({
+        const aprobada = await tx.solicitudRecuperacion.updateMany({
           where: {
             id: solicitud.id,
             estado: 'PENDIENTE',
             solicitadaEn: { gt: limitePendiente },
           },
           data: {
-            estado: 'APROBADA',
-            codigoHash,
-            codigoExpira,
+            estado: 'COMPLETADA',
+            codigoHash: null,
+            codigoExpira: null,
             aprobadaPorId: req.usuario.sub,
             aprobadaEn: ahora,
-            resueltaEn: null,
+            resueltaEn: ahora,
           },
         });
+        if (aprobada.count !== 1) return aprobada;
+
+        await tx.usuario.update({
+          where: { id: solicitud.usuarioId, estado: 'ACTIVO', rol: 'ESTUDIANTE' },
+          data: { contrasenaHash, sessionVersion: { increment: 1 } },
+        });
+        await tx.solicitudRecuperacion.updateMany({
+          where: {
+            usuarioId: solicitud.usuarioId,
+            id: { not: solicitud.id },
+            estado: { in: ['PENDIENTE', 'APROBADA'] },
+          },
+          data: {
+            estado: 'EXPIRADA',
+            codigoHash: null,
+            codigoExpira: null,
+            resueltaEn: ahora,
+          },
+        });
+        await reiniciarIntentos(tx, `login:${digest(solicitud.usuario.correo)}`);
+        return aprobada;
       });
       if (aprobada.count !== 1) {
         return error(res, 409, 'SOLICITUD_NO_DISPONIBLE', 'La solicitud cambió o venció mientras se procesaba');
@@ -339,9 +370,8 @@ function registerPasswordResetRoutes(app, { db, error, autenticar, requerirRol }
       data: {
         solicitudId: solicitud.id,
         correo: solicitud.usuario.correo,
-        codigo,
-        codigoExpira,
-        mensaje: 'Entrega este código al estudiante por un canal seguro. Solo se mostrará una vez.',
+        contrasenaTemporal,
+        mensaje: 'Entrega esta contraseña temporal al estudiante por un canal seguro. Solo se mostrará una vez; debe cambiarla después de iniciar sesión.',
       },
     });
   });

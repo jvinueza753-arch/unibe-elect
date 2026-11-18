@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const { createHash } = require('node:crypto');
-const { contrasenaSchema } = require('./password-validation');
+const { contrasenaSchema, validarPoliticaContrasena } = require('./password-validation');
 const { incrementarIntentos } = require('./intentos');
 const { registerPasswordResetRoutes } = require('./password-reset');
 
@@ -11,6 +11,7 @@ function createDatabase() {
   const user = {
     id: STUDENT_ID,
     correo: 'reset-test@example.invalid',
+    codigoEstudiantil: 'E0001',
     rol: 'ESTUDIANTE',
     estado: 'ACTIVO',
     sessionVersion: 0,
@@ -198,54 +199,67 @@ async function reset(routes, codigo, contrasenaNueva = 'new-test-password-2026')
   return invoke(routes.get(`POST ${resetPath}`)[0], { body: { codigo, contrasenaNueva } });
 }
 
+function addLegacyApprovedCode(request) {
+  const codigo = 'legacy-reset-code-' + 'x'.repeat(32);
+  Object.assign(request, {
+    estado: 'APROBADA',
+    codigoHash: createHash('sha256').update(codigo).digest('hex'),
+    codigoExpira: new Date(Date.now() + 60 * 60 * 1000),
+  });
+  return codigo;
+}
+
 describe('flujo de recuperación de contraseña', () => {
-  test('completa un ciclo y permite una nueva solicitud al mismo estudiante', async () => {
+  test('asigna una contraseña temporal, conserva el historial y permite otra solicitud', async () => {
     const db = createDatabase();
     const routes = createRouteHarness(db);
     expect((await requestReset(db, routes)).statusCode).toBe(202);
     const approved = await approve(db, routes, db.testRequests[0].id);
     expect(approved.statusCode).toBe(200);
-    const code = approved.body.data.codigo;
-    expect(db.testRequests[0].codigoHash).toBe(createHash('sha256').update(code).digest('hex'));
+    const contrasenaTemporal = approved.body.data.contrasenaTemporal;
+    expect(contrasenaTemporal).toEqual(expect.any(String));
+    expect(contrasenaTemporal).toHaveLength(32);
+    expect(validarPoliticaContrasena(contrasenaTemporal, db.testUser)).toEqual([]);
+    expect(db.testRequests[0].codigoHash).toBeNull();
+    expect(db.testRequests[0].codigoExpira).toBeNull();
     expect(db.testRequests[0].aprobadaPorId).toBe(db.testAdmin.id);
     expect(db.testRequests[0].aprobadaEn).toBeInstanceOf(Date);
-
-    expect((await reset(routes, code)).statusCode).toBe(204);
     expect(db.testRequests[0].estado).toBe('COMPLETADA');
-    expect(db.testRequests[0].codigoHash).toBeNull();
+    expect(db.testRequests[0].resueltaEn).toBeInstanceOf(Date);
     expect(db.testUser.sessionVersion).toBe(1);
-    expect(await bcrypt.compare('new-test-password-2026', db.testUser.contrasenaHash)).toBe(true);
+    expect(await bcrypt.compare(contrasenaTemporal, db.testUser.contrasenaHash)).toBe(true);
 
     expect((await requestReset(db, routes)).statusCode).toBe(202);
     expect(db.testRequests).toHaveLength(2);
     expect(db.testRequests[1].estado).toBe('PENDIENTE');
+    expect(db.testRequests[0].estado).toBe('COMPLETADA');
   });
 
   test('vence el código aprobado y permite una solicitud nueva', async () => {
     const db = createDatabase();
     const routes = createRouteHarness(db);
     await requestReset(db, routes);
-    const approved = await approve(db, routes, db.testRequests[0].id);
+    const code = addLegacyApprovedCode(db.testRequests[0]);
     db.testRequests[0].codigoExpira = new Date(Date.now() - 1000);
 
     expect((await requestReset(db, routes)).statusCode).toBe(202);
     expect(db.testRequests[0].estado).toBe('EXPIRADA');
     expect(db.testRequests[0].codigoHash).toBeNull();
     expect(db.testRequests).toHaveLength(2);
-    expect((await reset(routes, approved.body.data.codigo)).statusCode).toBe(400);
+    expect((await reset(routes, code)).statusCode).toBe(400);
   });
 
   test('permite reemitir código aprobado vigente e invalida el anterior', async () => {
     const db = createDatabase();
     const routes = createRouteHarness(db);
     await requestReset(db, routes);
-    const approved = await approve(db, routes, db.testRequests[0].id);
+    const oldCode = addLegacyApprovedCode(db.testRequests[0]);
     const reissued = await reissue(db, routes, db.testRequests[0].id);
 
     expect(reissued.statusCode).toBe(200);
     expect(db.testRequests[0].reemitidaPorId).toBe(db.testAdmin.id);
     expect(db.testRequests[0].reemitidaEn).toBeInstanceOf(Date);
-    expect((await reset(routes, approved.body.data.codigo)).statusCode).toBe(400);
+    expect((await reset(routes, oldCode)).statusCode).toBe(400);
     expect((await reset(routes, reissued.body.data.codigo)).statusCode).toBe(204);
   });
 
@@ -346,7 +360,6 @@ describe('flujo de recuperación de contraseña', () => {
     const loginKey = `login:${createHash('sha256').update(db.testUser.correo).digest('hex')}`;
     db.testRateWindows.set(loginKey, { intentos: 5, expiraEn: new Date(Date.now() + 60000) });
     await requestReset(db, routes);
-    const approved = await approve(db, routes, db.testRequests[0].id);
     db.testRequests.push({
       id: 'other-open-request',
       usuarioId: db.testUser.id,
@@ -354,7 +367,7 @@ describe('flujo de recuperación de contraseña', () => {
       solicitadaEn: new Date(),
     });
 
-    expect((await reset(routes, approved.body.data.codigo)).statusCode).toBe(204);
+    expect((await approve(db, routes, db.testRequests[0].id)).statusCode).toBe(200);
     expect(db.testRateWindows.has(loginKey)).toBe(false);
     expect(db.testUser.sessionVersion).toBe(1);
     expect(db.testRequests[1].estado).toBe('EXPIRADA');
@@ -364,8 +377,8 @@ describe('flujo de recuperación de contraseña', () => {
     const db = createDatabase();
     const routes = createRouteHarness(db);
     await requestReset(db, routes);
-    const approved = await approve(db, routes, db.testRequests[0].id);
-    const reused = await reset(routes, approved.body.data.codigo, 'old-test-password');
+    const code = addLegacyApprovedCode(db.testRequests[0]);
+    const reused = await reset(routes, code, 'old-test-password');
 
     expect(reused.statusCode).toBe(400);
     expect(reused.body.error.codigo).toBe('CONTRASENA_REUTILIZADA');
@@ -378,8 +391,8 @@ describe('flujo de recuperación de contraseña', () => {
     const db = createDatabase();
     const routes = createRouteHarness(db);
     await requestReset(db, routes);
-    const approved = await approve(db, routes, db.testRequests[0].id);
-    const response = await reset(routes, approved.body.data.codigo, 'password1');
+    const code = addLegacyApprovedCode(db.testRequests[0]);
+    const response = await reset(routes, code, 'password1');
 
     expect(response.statusCode).toBe(400);
     expect(response.body.error.codigo).toBe('DATOS_INVALIDOS');
@@ -404,10 +417,10 @@ describe('flujo de recuperación de contraseña', () => {
     const db = createDatabase();
     const routes = createRouteHarness(db);
     await requestReset(db, routes);
-    const approved = await approve(db, routes, db.testRequests[0].id);
+    const code = addLegacyApprovedCode(db.testRequests[0]);
     const results = await Promise.all([
-      reset(routes, approved.body.data.codigo, 'concurrent-password-one-2026'),
-      reset(routes, approved.body.data.codigo, 'concurrent-password-two-2027'),
+      reset(routes, code, 'concurrent-password-one-2026'),
+      reset(routes, code, 'concurrent-password-two-2027'),
     ]);
 
     expect(results.map((result) => result.statusCode).sort()).toEqual([204, 400]);
